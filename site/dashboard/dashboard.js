@@ -6,6 +6,15 @@ const detail = element('detail');
 const retry = element('retry');
 let repositories = [];
 let selected;
+let page = 0;
+
+const pageSize = 16;
+const search = element('search');
+const ownerFilter = element('owner-filter');
+const stateFilter = element('state-filter');
+const list = element('repos');
+const previous = element('previous');
+const next = element('next');
 
 function node(tag, text, className) {
   const item = document.createElement(tag);
@@ -33,11 +42,20 @@ async function request(path, data) {
 }
 
 const label = repo => repo.owner + '/' + repo.name;
-const enrollmentState = repo => repo.enrollment ? 'Enrolled' : repo.needsRelink ? 'Enrollment needs attention' : 'Installed';
+const stateOf = repo => repo.enrollment ? 'enrolled' : repo.needsRelink ? 'attention' : 'installed';
+const stateLabels = { enrolled: 'Enrolled', attention: 'Needs attention', installed: 'Installed only' };
+const stateRank = { attention: 0, enrolled: 1, installed: 2 };
+
+function updateOwners() {
+  const active = ownerFilter.value;
+  const owners = [...new Set(repositories.map(repo => repo.owner))].sort((a, b) => a.localeCompare(b));
+  ownerFilter.replaceChildren(new Option('All owners', ''), ...owners.map(owner => new Option(owner, owner)));
+  if (owners.includes(active)) ownerFilter.value = active;
+}
 
 function showRepository(repo) {
   selected = repo;
-  renderList();
+  updateSelection();
   detail.replaceChildren();
   if (!repo) {
     detail.append(node('p', repositories.length ? 'Choose a repository.' : 'No repositories are available to this account.', 'muted'));
@@ -47,7 +65,7 @@ function showRepository(repo) {
   const url = 'https://github.com/' + [repo.owner, repo.name].map(encodeURIComponent).join('/');
   const policyUrl = ref => url + '/blob/' + ref.split('/').map(encodeURIComponent).join('/') + '/.access.yml';
   const heading = node('div', undefined, 'repo-heading');
-  const state = node('span', enrollmentState(repo), repo.enrollment ? 'state enrolled' : 'state');
+  const state = node('span', stateLabels[stateOf(repo)], 'state ' + stateOf(repo));
   heading.append(node('h2', label(repo)), state);
   detail.append(heading);
 
@@ -157,24 +175,67 @@ function enrollmentError(error) {
   }
 }
 
+function updateSelection() {
+  for (const button of list.querySelectorAll('button[data-repo]')) {
+    button.setAttribute('aria-pressed', String(Boolean(selected) && button.dataset.repo === label(selected)));
+  }
+}
+
 function renderList() {
-  const query = element('search').value.trim().toLowerCase();
-  const list = element('repos');
+  const terms = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = repositories.filter(repo => {
+    const fullname = label(repo).toLowerCase();
+    return (!ownerFilter.value || repo.owner === ownerFilter.value)
+      && (!stateFilter.value || stateOf(repo) === stateFilter.value)
+      && terms.every(term => fullname.includes(term));
+  });
+  page = Math.min(page, Math.max(0, Math.ceil(matches.length / pageSize) - 1));
+  const start = page * pageSize;
+  const results = matches.slice(start, start + pageSize);
   list.replaceChildren();
-  for (const repo of repositories.filter(item => label(item).toLowerCase().includes(query))) {
+  element('results').scrollTop = 0;
+
+  for (const repo of results) {
     const item = node('li');
-    const button = node('button', label(repo));
+    const button = node('button', undefined, 'repo-row');
     button.type = 'button';
-    button.append(node('small', enrollmentState(repo)));
-    button.setAttribute('aria-pressed', String(repo === selected));
+    button.dataset.repo = label(repo);
+    button.title = label(repo);
+
+    const name = node('span', undefined, 'repo-name');
+    name.append(node('strong', repo.name), node('small', repo.owner));
+    const state = stateOf(repo);
+    button.append(name, node('span', stateLabels[state], 'row-state ' + state));
     button.onclick = () => {
       showRepository(repo);
-      list.querySelector('[aria-pressed="true"]')?.focus();
+      if (matchMedia('(max-width: 740px)').matches) detail.focus();
     };
     item.append(button);
     list.append(item);
   }
-  if (query && !list.children.length) list.append(node('li', 'No matches', 'muted'));
+
+  const empty = element('empty-results');
+  empty.hidden = results.length > 0;
+  empty.textContent = repositories.length ? 'No repositories match these filters.' : 'No repositories available.';
+  const count = matches.length;
+  element('result-count').textContent = count > pageSize
+    ? `${start + 1}–${start + results.length} of ${count}`
+    : `${count} ${count === 1 ? 'repository' : 'repositories'}`;
+  element('pagination').hidden = count <= pageSize;
+  previous.setAttribute('aria-disabled', String(page === 0));
+  next.setAttribute('aria-disabled', String(start + pageSize >= count));
+  updateSelection();
+}
+
+function resetPage() {
+  page = 0;
+  renderList();
+}
+
+function changePage(button, step) {
+  if (button.getAttribute('aria-disabled') === 'true') return;
+  page += step;
+  renderList();
 }
 
 async function load(preferred) {
@@ -182,16 +243,23 @@ async function load(preferred) {
   retry.hidden = true;
   try {
     const result = await request('inventory');
-    repositories = result.repositories;
+    repositories = result.repositories.sort((a, b) =>
+      stateRank[stateOf(a)] - stateRank[stateOf(b)] || label(a).localeCompare(label(b)),
+    );
+    updateOwners();
     element('username').textContent = '@' + result.account;
     element('account').hidden = false;
     login.hidden = true;
     inventory.hidden = false;
     status.textContent = '';
     showRepository(repositories.find(repo => label(repo) === preferred) ?? repositories[0]);
+    renderList();
   } catch (error) {
     if (error.status === 401) {
       repositories = [];
+      showRepository(undefined);
+      updateOwners();
+      resetPage();
       element('account').hidden = true;
       inventory.hidden = true;
       login.hidden = false;
@@ -203,7 +271,17 @@ async function load(preferred) {
   }
 }
 
-element('search').addEventListener('input', renderList);
+search.addEventListener('input', resetPage);
+search.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || event.isComposing) return;
+  const first = list.querySelector('button');
+  first?.focus();
+  first?.click();
+});
+ownerFilter.addEventListener('change', resetPage);
+stateFilter.addEventListener('change', resetPage);
+previous.addEventListener('click', () => changePage(previous, -1));
+next.addEventListener('click', () => changePage(next, 1));
 retry.addEventListener('click', () => load(selected && label(selected)));
 element('logout').addEventListener('click', async () => {
   try {

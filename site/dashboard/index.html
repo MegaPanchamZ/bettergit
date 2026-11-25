@@ -37,12 +37,35 @@
         </div>
       </div>
       <div class="workspace">
-        <div class="sidebar">
-          <label class="visually-hidden" for="search">Filter repositories</label>
-          <input id="search" type="search" placeholder="Filter repositories">
-          <ul id="repos" aria-label="Repositories"></ul>
-        </div>
-        <section id="detail" class="detail" aria-label="Repository details"></section>
+        <section class="sidebar" aria-label="Find a repository">
+          <div class="filters">
+            <label class="visually-hidden" for="search">Search repositories</label>
+            <input id="search" type="search" placeholder="Search owner or repository" autocomplete="off">
+            <div class="filter-row">
+              <label class="visually-hidden" for="owner-filter">Repository owner</label>
+              <select id="owner-filter"><option value="">All owners</option></select>
+              <label class="visually-hidden" for="state-filter">Enrollment status</label>
+              <select id="state-filter">
+                <option value="">All statuses</option>
+                <option value="enrolled">Enrolled</option>
+                <option value="attention">Needs attention</option>
+                <option value="installed">Installed only</option>
+              </select>
+            </div>
+          </div>
+          <div class="results" id="results">
+            <ul id="repos" aria-label="Repositories"></ul>
+            <p id="empty-results" class="muted" hidden></p>
+          </div>
+          <footer class="results-footer">
+            <span id="result-count" role="status"></span>
+            <div class="pagination" id="pagination" hidden>
+              <button id="previous" type="button" aria-label="Previous page">←</button>
+              <button id="next" type="button" aria-label="Next page">→</button>
+            </div>
+          </footer>
+        </section>
+        <section id="detail" class="detail" aria-label="Repository details" tabindex="-1"></section>
       </div>
     </section>
     <p id="status" role="status">Loading repositories…</p>
