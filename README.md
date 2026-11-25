@@ -8,7 +8,7 @@ Git-native granular encryption for repositories hosted on GitHub. The open-sourc
 
 ## Install and use
 
-Use the CLI by itself for local Git encryption, or deploy the control plane for GitHub team-based key distribution and merge checks. Each organization can run its own [control plane with Docker Compose](deploy/README.md) on a Linux VM and register its own GitHub App.
+Use the CLI by itself for local Git encryption. For GitHub team-based key distribution and merge checks, use [hosted Better Git](#hosted-better-git) or run your own [control plane with Docker Compose](deploy/README.md) and register your own GitHub App.
 
 To install the CLI from source, install Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`, and use a desktop session with a running, unlocked Secret Service keyring such as GNOME Keyring. macOS uses Keychain and Windows uses Credential Manager.
 
@@ -119,6 +119,19 @@ The filter, guard, CI, and browser viewer require signed content. Migrate using 
 Use the existing index mode from `git ls-files -s` for each path. The migration writes ciphertext only and refuses to overwrite its output. After staging the signed blobs and reviewed signing-key pins, refresh the protected worktree paths and approve the migration commit as the new guard baseline. Rotate any values previously exposed in a dotenv assignment tail. Old Git revisions retain their original bytes.
 
 If the filter refuses an invalid index blob, inspect the committed history and identify a trusted signed revision first. Restore only the index entry with `git restore --staged --source TRUSTED_COMMIT -- PATH`, then stage the reviewed working copy normally. This preserves working-copy edits. Rotate affected secrets if bad history was shared.
+
+## Hosted Better Git
+
+An organization owner can [install the Better Git App](https://github.com/apps/better-git-app/installations/new) on selected repositories. Start with a disposable organization repository and dummy secrets while Better Git is in development preview.
+
+Install the CLI and follow [policy and local setup](#policy-and-local-setup). Commit the policy with its signing keys to the repository's default branch. Then, from the repository checkout, sign in and enroll it as a repository administrator.
+
+```sh
+bettergit login --client-id Iv23lig8vf1PwnacamJA --server https://bettergit.app
+bettergit enroll --server https://bettergit.app OWNER REPO
+```
+
+Use `https://bettergit.app` as the server for the remaining [managed directory commands](#managed-directory). Before requiring **Better Git merge encryption guard** in your branch rules, verify that the App reports the check on a pull request. The hosted App supports team-based key distribution and merge checks. Restricted companion branches require the self-hosted setup and its additional GitHub permissions.
 
 ## Managed directory
 
