@@ -1,0 +1,60 @@
+services:
+  control-plane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://bettergit:${BETTERGIT_DB_PASSWORD:?Set BETTERGIT_DB_PASSWORD}@db:5432/bettergit
+      BETTERGIT_BINARY: /usr/local/bin/bettergit
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?Set GITHUB_APP_ID}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?Set GITHUB_CLIENT_SECRET}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:?Set GITHUB_PRIVATE_KEY}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?Set GITHUB_WEBHOOK_SECRET}
+    networks: [edge, database]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bettergit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      BETTERGIT_DB_PASSWORD: ${BETTERGIT_DB_PASSWORD:?Set BETTERGIT_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/10-bettergit.sh:ro
+      - ../control-plane:/schema:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "bettergit"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [database]
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [control-plane]
+    environment:
+      BETTERGIT_DOMAIN: ${BETTERGIT_DOMAIN:?Set BETTERGIT_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    networks: [edge]
+
+networks:
+  edge:
+  database:
+    internal: true
+
+volumes:
+  postgres_data:
+  caddy_data:

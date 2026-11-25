@@ -146,4 +146,4 @@ function runWorker(name:string,processNext:()=>Promise<void>) {
 runWorker('Offboarding delivery',drainOffboardingDelivery);
 runWorker('Shadow revocation',drainShadowRevocation);
 runWorker('GitHub guard',drainGuardDelivery);
-server.listen(Number(process.env.PORT??3000),'127.0.0.1');
+server.listen(Number(process.env.PORT??3000),process.env.HOST??'127.0.0.1');

@@ -305,7 +305,7 @@ impl Index {
         self.output.read_exact(&mut data)?;
         let mut end = [0];
         self.output.read_exact(&mut end)?;
-        ensure!(end == [b'\n'], "invalid index terminator");
+        ensure!(end == *b"\n", "invalid index terminator");
         Ok(Some(data))
     }
 }

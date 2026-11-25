@@ -1,0 +1,17 @@
+{
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 30s
+			write 60s
+			idle 60s
+		}
+	}
+}
+
+{$BETTERGIT_DOMAIN} {
+	request_body {
+		max_size 25MiB
+	}
+	reverse_proxy control-plane:3000
+}

@@ -1,5 +1,7 @@
 # Better Git control plane
 
+For a single Linux VM, follow the [Docker Compose deployment guide](../deploy/README.md). The following settings also apply to a native installation.
+
 Requires Node 24+, Postgres 16+, a built Better Git executable, and a GitHub App. This service stores public identities, encrypted envelopes, access metadata, and audit events. It has no decryption identity. The GitHub App guard necessarily reads pushed blobs through GitHub's API: if someone already pushed plaintext, that plaintext has already reached GitHub and may transit the guard. The guard cannot retroactively prevent a push.
 
 Apply `schema.sql`, then `phase2.sql`, then `phase3.sql`, then `guard-checkpoints.sql`, then `team-identity.sql`, `team-identity-enforcement.sql`, `guard-deliveries.sql`, and `delivery-reliability.sql` exactly once to a fresh database. On upgrade, apply only the pending migrations in that order. For each older unbound group, independently verify the original team ID and run `bettergit create-group --team-id ID` with the repository and group arguments. The group cannot deliver keys until this explicit backfill succeeds. Use a migration-role account for schema changes and a least-privilege service account for runtime. For local testing, `TEST_DATABASE_URL=postgresql://... npm test` creates temporary schemas and cleans them up.
@@ -10,9 +12,9 @@ Required environment:
 - `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`: server-side GitHub App credentials.
 - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`: OAuth credentials for the same GitHub App. The service checks user access tokens against this App before accepting them.
 - `BETTERGIT_BINARY`: absolute path to the compiled executable, used for shared policy and ciphertext validation.
-- `PORT`: loopback listener port, default 3000.
+- `HOST` and `PORT`: listener address and port, default `127.0.0.1:3000`. The Compose deployment uses a private Docker network.
 
-Run `npm ci`, `npm run check`, then `npm start`. Terminate HTTPS at an authenticated, configured reverse proxy. Keep the listener private; apply proxy body limits, request deadlines, rate limits, and log redaction. Socket addresses in current audits identify the direct peer, not a forwarded client. Do not blindly trust `X-Forwarded-For`. No deployment is performed by this repository.
+Run `npm ci`, `npm run check`, then `npm start`. Terminate HTTPS at an authenticated, configured reverse proxy. Keep the listener private; apply proxy body limits, request deadlines, rate limits, and log redaction. Socket addresses in current audits identify the direct peer, not a forwarded client. Do not blindly trust `X-Forwarded-For`.
 
 Configure the App for repository Contents read, Metadata read, Checks write, Pull requests write, Administration write, and Organization Members read. Creation of organization repositories needs the corresponding organization permissions supported by your GitHub installation. Enable device flow and user authorization, and install on the parent and newly created shadow repos. The service should fail closed when GitHub denies a required operation. Validate actual granted permissions in a non-production organization before rollout.
 

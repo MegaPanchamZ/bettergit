@@ -4,7 +4,22 @@
 
 Git-native granular encryption for repositories hosted on GitHub. The open-source Rust CLI encrypts protected content before Git stores it. A TypeScript control plane distributes only wrapped group keys. Companion repositories support restricted branch collaboration.
 
-**Development release. Do not entrust production secrets to this build.** Independent audits and their original reproductions are in [`audits/`](audits/); [audit status](docs/audit-status.md) connects the phase reports and later verification. The implementation has changed since those snapshots; passing tests are not a security certification. Live GitHub, provider-issued OIDC, cross-platform keychains, and browser installation require deployment validation.
+**Development preview. Use synthetic secrets for evaluation.** See the [audit status](docs/audit-status.md) and [validation record](docs/validation.md) for the checks still required before production use.
+
+## Install and use
+
+Use the CLI by itself for local Git encryption, or deploy the control plane for GitHub team-based key distribution and merge checks. Each organization can run its own [control plane with Docker Compose](deploy/README.md) on a Linux VM and register its own GitHub App.
+
+To install the CLI from source, install Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`, and use a desktop session with a running, unlocked Secret Service keyring such as GNOME Keyring. macOS uses Keychain and Windows uses Credential Manager.
+
+```sh
+git clone https://github.com/MegaPanchamZ/bettergit.git
+cd bettergit
+cargo install --locked --path .
+bettergit --version
+```
+
+Follow [policy and local setup](#policy-and-local-setup) in a new test repository, using dummy files and values. After staging, `bettergit check-staged --json` verifies the encrypted index. For the browser viewer, see [build and verify](#build-and-verify) and [browser viewer setup](#browser-viewer).
 
 ## Build and verify
 
@@ -49,7 +64,7 @@ The command verifies the Git index snapshot against the staged `.access.yml` and
 
 ## Policy and local setup
 
-Commit a policy and public stub files before initializing a repository that already has encrypted content:
+In a new test repository, save the following as `.access.yml`. Create `.env.example` and `src/private.stub.ts` with public placeholder content. Create `.env.production` and `src/private.ts` with dummy values.
 
 ```yaml
 version: 1
@@ -70,10 +85,10 @@ bettergit init
 bettergit group-signing-key github-team:infra
 # Add the printed value as signing_key to every rule for this group.
 bettergit init
-# Inspect the staged blobs, then commit the policy and generated attributes.
 git add .access.yml .gitattributes .env.example src/private.stub.ts
 git add .env.production src/private.ts
-git show :.env.production
+bettergit check-staged --json
+git commit -m "Enable Better Git encryption"
 ```
 
 Init writes the absolute binary path and a required synchronous process filter into local Git configuration. It manages `.gitattributes` and local `info/attributes` to disable text/EOL/encoding conversions on ciphertext. It creates group keys only for untracked protected content, and never invents a replacement key for existing indexed data. Back up encrypted envelopes using your organization's key recovery process; losing every authorized identity makes data unrecoverable.
@@ -107,7 +122,7 @@ If the filter refuses an invalid index blob, inspect the committed history and i
 
 ## Managed directory
 
-Deploy the service as described in [`control-plane/README.md`](control-plane/README.md). Enable device flow on your GitHub App and use its client ID, with repository permissions configured on the App rather than requesting the broad OAuth `repo` scope.
+Deploy with [Docker Compose](deploy/README.md) or follow the [native control-plane setup](control-plane/README.md). Enable device flow on your GitHub App and use its client ID, with repository permissions configured on the App rather than requesting the broad OAuth `repo` scope.
 
 ```sh
 bettergit login --client-id APP_CLIENT_ID --server https://keys.example.test

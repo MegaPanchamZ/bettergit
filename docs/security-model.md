@@ -26,4 +26,4 @@ There is no plaintext private-key file fallback. Identity loss requires an indep
 
 ## Release validation
 
-Independent audits in `audits/` record the source snapshots they inspected. Later remediation does not retroactively change those verdicts. Local tests cover synthetic identities, ciphertext/context failures, Git filtering, the packet protocol, mocked provider tokens, and disposable Postgres operations. Live GitHub permissions and required-check selection, provider-issued OIDC, all supported OS keychains, and installed browser behavior still require deployment validation.
+The [audit status](audit-status.md) summarizes reviews of earlier source snapshots. Later remediation does not retroactively change those verdicts. Local tests cover synthetic identities, ciphertext/context failures, Git filtering, the packet protocol, mocked provider tokens, and disposable Postgres operations. Live GitHub permissions and required-check selection, provider-issued OIDC, all supported OS keychains, and installed browser behavior still require deployment validation.
