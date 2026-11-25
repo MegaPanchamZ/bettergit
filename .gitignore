@@ -1,0 +1,7 @@
+/target
+/control-plane/node_modules
+/control-plane/dist
+.env
+
+/extension/node_modules
+/extension/dist

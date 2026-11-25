@@ -1,0 +1,1 @@
+{"manifest_version":3,"name":"Better Git private diffs","version":"0.1.0","description":"Decrypt selected encrypted GitHub diff values locally.","permissions":["activeTab","scripting"],"action":{"default_popup":"popup.html"},"content_security_policy":{"extension_pages":"script-src 'self'; object-src 'none'"}}
