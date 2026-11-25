@@ -29,6 +29,110 @@ function link(text, href) {
   return item;
 }
 
+function enhanceFilter(select) {
+  const field = node('div', undefined, 'filter-picker');
+  const trigger = node('button', undefined, 'picker-trigger');
+  const value = node('span');
+  const menu = node('div', undefined, 'picker-menu');
+  const label = select.labels[0].textContent;
+  trigger.type = 'button';
+  trigger.setAttribute('aria-haspopup', 'menu');
+  trigger.setAttribute('aria-expanded', 'false');
+  menu.id = select.id + '-menu';
+  trigger.setAttribute('aria-controls', menu.id);
+  trigger.append(value, node('span', undefined, 'picker-chevron'));
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', label);
+  menu.hidden = true;
+  field.append(trigger, menu);
+  select.after(field);
+  select.hidden = true;
+
+  function sync() {
+    value.textContent = select.selectedOptions[0]?.label ?? '';
+    trigger.setAttribute('aria-label', label + ', ' + value.textContent);
+  }
+
+  function close(restoreFocus = false) {
+    trigger.setAttribute('aria-expanded', 'false');
+    menu.hidden = true;
+    if (restoreFocus) trigger.focus();
+  }
+
+  function open(position = 'selected') {
+    menu.replaceChildren();
+    for (const option of select.options) {
+      const item = node('button', undefined, 'picker-option');
+      item.append(node('span', option.label));
+      item.type = 'button';
+      item.tabIndex = -1;
+      item.setAttribute('role', 'menuitemradio');
+      item.setAttribute('aria-checked', String(option.selected));
+      item.onclick = () => {
+        select.value = option.value;
+        select.dispatchEvent(new Event('change'));
+        close(true);
+      };
+      menu.append(item);
+    }
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    const triggerBounds = trigger.getBoundingClientRect();
+    menu.classList.toggle('above',
+      window.innerHeight - triggerBounds.bottom < menu.offsetHeight && triggerBounds.top > window.innerHeight - triggerBounds.bottom,
+    );
+    const choice = position === 'first' ? menu.firstElementChild
+      : position === 'last' ? menu.lastElementChild
+      : menu.querySelector('[aria-checked="true"]');
+    choice?.focus();
+  }
+
+  trigger.onclick = () => menu.hidden ? open() : close(true);
+  trigger.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    open(event.key === 'ArrowDown' ? 'first' : 'last');
+  });
+  menu.addEventListener('keydown', event => {
+    const options = [...menu.children];
+    const current = options.indexOf(document.activeElement);
+    let target;
+    switch (event.key) {
+      case 'Tab':
+        close(true);
+        return;
+      case 'Escape':
+        event.preventDefault();
+        close(true);
+        return;
+      case 'ArrowDown': target = options[(current + 1) % options.length]; break;
+      case 'ArrowUp': target = options[(current - 1 + options.length) % options.length]; break;
+      case 'Home': target = options[0]; break;
+      case 'End': target = options.at(-1); break;
+      default:
+        if (event.key.length !== 1 || event.key === ' ' || event.ctrlKey || event.altKey || event.metaKey) return;
+        target = [...options.slice(current + 1), ...options.slice(0, current + 1)]
+          .find(option => option.textContent.toLowerCase().startsWith(event.key.toLowerCase()));
+    }
+    if (target) {
+      event.preventDefault();
+      target.focus();
+    }
+  });
+  field.addEventListener('focusout', event => {
+    if (!field.contains(event.relatedTarget)) close();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!field.contains(event.target)) close();
+  });
+  select.addEventListener('change', sync);
+  sync();
+  return sync;
+}
+
+const syncOwnerFilter = enhanceFilter(ownerFilter);
+enhanceFilter(stateFilter);
+
 async function request(path, data) {
   const options = data === undefined ? {} : {
     method: 'POST',
@@ -51,6 +155,7 @@ function updateOwners() {
   const owners = [...new Set(repositories.map(repo => repo.owner))].sort((a, b) => a.localeCompare(b));
   ownerFilter.replaceChildren(new Option('All owners', ''), ...owners.map(owner => new Option(owner, owner)));
   if (owners.includes(active)) ownerFilter.value = active;
+  syncOwnerFilter();
 }
 
 function showRepository(repo) {
