@@ -165,23 +165,43 @@ Build `extension/` and load its `dist/` directory as an unpacked Chromium extens
 
 The current viewer supports selected value-mode content, one group at a time. It does not yet retrieve and compare whole-file age blobs or integrate directly with OS Keychain. The CLI never exports its long-term identity; use a separately generated browser identity and an explicitly verified grant. Do not copy a production CLI identity out of Keychain to use the viewer. Firefox packaging and store submission are unverified.
 
-## Restricted branches
+## Private workspaces and restricted branches
 
-The organization must have base repository permission `none`. Every allowed user must already be able to read the parent repository because its history is copied into the companion repository. The GitHub App needs access to newly created companions.
+A private workspace is one GitHub companion repository with one audience. Multiple restricted branches can share it. Every branch in a workspace is visible to its entire audience; use separate workspaces for different audiences. Repository administrators manage workspaces through the dashboard or CLI. Members currently receive push access; separate reader/writer and delegated owner roles are not implemented.
+
+The organization must have base repository permission `none`. Allowed users must belong to the organization and already read the parent repository because its history is copied into the companion. The self-hosted GitHub App needs access to newly created companions. Workspace groups reference existing enrolled directory groups, whose numeric GitHub team identities are independently pinned. Team memberships become individual repository grants, rather than giving the team direct repository access.
 
 ```sh
-bettergit branch create private-feature --allow @alice,@bob \
+# Create once; share the returned workspace ID across branches.
+bettergit workspace create legal --repo REPO_ID --allow @alice,@bob \
+  --groups GROUP_ID --server https://keys.example.test
+bettergit workspace list --repo REPO_ID --server https://keys.example.test
+bettergit workspace show WORKSPACE_ID --server https://keys.example.test
+# Replaces the complete desired audience. Include every group/user to retain.
+bettergit workspace members WORKSPACE_ID --allow @alice,@bob \
+  --groups GROUP_ID --server https://keys.example.test
+bettergit workspace reconcile WORKSPACE_ID --server https://keys.example.test
+bettergit branch create private-feature --workspace WORKSPACE_ID \
   --server https://keys.example.test --repo REPO_ID
 git push bettergit-private-feature private-feature
-# An allowed collaborator, in their enrolled clone:
 bettergit branch join SHADOW_ID --server https://keys.example.test
 # Fetch, merge, and push collaborators' work and the latest public main first.
 bettergit branch publish private-feature --base main --server https://keys.example.test
 ```
 
-Create configures a private shadow remote and installs a pre-push hook preserving an existing hook. The hook rejects private ancestry sent to other remotes, including explicit and bulk pushes. Hooks are a local accident-prevention mechanism and can be bypassed by users who control their machine. They track commit ancestry: copying content, cherry-picking, or making an independent squash commit does not preserve that ancestry and cannot be detected by this hook. Publish authorizes before any public push, requires the current public base to be an ancestor of the private tip, checks the pushed shadow tip, then creates a new single-parent commit and opens a PR. The server compares its tree to the shadow, verifies the exact commit SHAs and PR head, and checks the current base. If public transfer succeeds but the PR request fails, use `bettergit branch resume NAME --server URL` to recover PR creation; the content is already public after that transfer. Publishing intentionally reveals that content to all parent-repository readers.
+The legacy `branch create NAME --allow @alice,@bob` command creates a new workspace for that branch and includes its creator. Creating branches and publishing still require parent administrator access and workspace membership. Branch names must be unique within the enrolled parent repository. Workspace membership does not grant encryption keys: the existing directory approval and envelope delivery flow remains separate.
 
-Private companions remain visible to organization owners, enterprise administrators, authorized Apps, and other privileged GitHub roles. GitHub permissions cannot guarantee invisibility to administrators or exclusion from every AI integration. Set organization App and Copilot access policies explicitly. ACL checks occur during creation/publication; continuous privacy-drift reconciliation is not implemented. Do not interpret this feature as an administrative secrecy boundary.
+The dashboard displays workspace state, the last successful verification, effective members and their access sources, offboarding exclusions, branches, and access history. Listed members on a blocked workspace reflect the last successful verification, not a claim about current GitHub access. Audience changes are saved before applying permissions. Failed checks remain blocked and retry after one minute; successful checks become due after five minutes. A worker leases batches of four across service replicas. Join and publication require a successful verification within ten minutes; large queues or provider outages can therefore block these operations. Existing Git clones communicate directly with GitHub: blocking Better Git operations does not itself stop Git fetch/push or recall already downloaded content.
+
+Reconciliation removes unexpected direct collaborators, team grants, and pending invitations; applies intended push grants; and verifies the result before marking access ready. Privileged administrators are preserved. Unexpected organization base permissions, repository visibility/identity changes, unavailable team sources, provider errors, or unapplied grants block verification. This is eventual enforcement: exposure between a GitHub permission change and correction cannot be recalled. Offboarding exclusions persist so stale team data cannot automatically regrant access; reinstatement currently requires independently reviewed administrative recovery. Key rotation and secret rotation remain separate incident-response work.
+
+Archive a workspace from the dashboard to remove managed collaborator access, verify removal, and archive its repository. History is retained; privileged administrators can still access it. Automatic deletion and configurable retention are not implemented.
+
+Create installs a pre-push hook preserving an existing hook. The hook rejects private ancestry sent to other remotes, including explicit and bulk pushes. Hooks can be bypassed by users controlling their machine. Copying content, cherry-picking, or independent squash commits cannot be detected by ancestry checks. Publish authorizes before public transfer, requires the current public base to be an ancestor of the private tip, checks the shadow tip, then creates a new single-parent commit and opens a PR. The server verifies trees, exact SHAs, PR head, and current base. If public transfer succeeds but PR creation fails, `bettergit branch resume NAME --server URL` recovers PR creation; the content has already reached all parent readers.
+
+Private companions remain visible to organization owners, enterprise administrators, authorized Apps, and other privileged GitHub roles. Set organization App and Copilot access policies explicitly. Workspaces are not an administrative secrecy boundary.
+
+Apply `control-plane/workspaces.sql` after the preceding migrations before deploying this version. Existing companions become separate workspaces named `BRANCH-ID`; repository names, Git history, branch IDs, and local remotes remain unchanged. Existing active workspaces start pending verification. Failed legacy records remain inactive. Upgrade grants must include the new tables and sequences; see the control-plane deployment instructions.
 
 ## Releases
 

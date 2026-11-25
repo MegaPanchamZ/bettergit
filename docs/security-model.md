@@ -14,6 +14,8 @@ Local policy is pinned during init. Reviewed policy changes require re-initializ
 
 ## Restricted collaboration
 
+Private workspaces group branches with identical audiences into companion repositories. Reconciliation periodically verifies and applies intended access; pending, blocked, archived, or stale workspaces cannot authorize new joins/publication. Direct Git access continues to use GitHub permissions, so verification status is not a pre-receive gate. Access drift may expose data before correction. Team audiences do not grant encryption keys.
+
 Companion repositories isolate ordinary repository readers using GitHub permissions. They cannot hide from organization owners, enterprise administrators, authorized Apps, or other privileged roles. Copying parent history requires every companion collaborator to already have read access to the parent. Organizations need base permission `none` and appropriate App/AI access policies.
 
 The local push guard tracks restricted commit ancestry. It cannot recognize independent copies, cherry-picks, or content squashes as originating from restricted work. Deliberate publication must reveal the reviewed content to all parent readers. Public Git transfer and PR creation are separate effects; a failed PR request cannot recall content already transferred. Do not interpret a command failure as proof that content stayed private.

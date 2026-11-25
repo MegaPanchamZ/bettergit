@@ -32,7 +32,13 @@ fn enrollment(server: &str, repo: Option<&str>) -> Result<Value> {
     }
     Ok(value)
 }
-pub fn create(server: &str, repo: &str, name: &str, allow: &str) -> Result<()> {
+pub fn create(
+    server: &str,
+    repo: &str,
+    name: &str,
+    allow: Option<&str>,
+    workspace: Option<&str>,
+) -> Result<()> {
     ensure!(
         valid(name) && repo.bytes().all(|c| c.is_ascii_digit()),
         "invalid branch or repo ID"
@@ -59,14 +65,22 @@ pub fn create(server: &str, repo: &str, name: &str, allow: &str) -> Result<()> {
     );
     crate::client::server(server)?;
     install_hook()?;
+    ensure!(
+        allow.is_some() != workspace.is_some(),
+        "choose allow or workspace"
+    );
     let allow: Vec<_> = allow
+        .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().trim_start_matches('@'))
         .collect();
     let value = crate::client::request(
         "POST",
         &format!("{}/v1/repos/{repo}/shadows", server.trim_end_matches('/')),
-        Some(json!({"name":name,"allow":allow})),
+        Some(match workspace {
+            Some(id) => json!({"name":name,"workspace":id}),
+            None => json!({"name":name,"allow":allow}),
+        }),
     )?;
     let remote = value["remote"].as_str().context("missing shadow remote")?;
     ensure!(
@@ -568,5 +582,36 @@ pub fn guard_push(remote: &str, url: &str) -> Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+/// Manage access metadata without fetching or publishing private Git content.
+pub fn workspace_request(
+    server: &str,
+    method: &str,
+    repo: Option<&str>,
+    id: Option<&str>,
+    body: Option<Value>,
+    reconcile: bool,
+) -> Result<()> {
+    crate::client::server(server)?;
+    let identifier = repo.or(id).context("workspace or repository ID required")?;
+    ensure!(
+        !identifier.is_empty() && identifier.bytes().all(|c| c.is_ascii_digit()),
+        "invalid ID"
+    );
+    let path = match repo {
+        Some(repo) => format!("/v1/repos/{repo}/workspaces"),
+        None => format!(
+            "/v1/workspaces/{identifier}{}",
+            if reconcile { "/reconcile" } else { "" }
+        ),
+    };
+    let value = crate::client::request(
+        method,
+        &format!("{}{path}", server.trim_end_matches('/')),
+        body,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }

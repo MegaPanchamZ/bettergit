@@ -181,3 +181,12 @@ td a { color: #b9d4f9; }
 }
 
 .inventory-links { margin: 0; }
+
+.private-workspaces { border-block: 1px solid var(--rule); padding-bottom: 1rem; margin-top: 1.25rem; }
+.workspace-card { border-top: 1px solid var(--rule); padding: 1rem 0; }
+.workspace-card > .state { margin-left: .75rem; }
+.workspace-form { display: grid; gap: .9rem; margin-top: 1rem; }
+.workspace-form label { display: grid; gap: .3rem; }
+.workspace-form fieldset { border: 1px solid var(--rule); border-radius: 8px; }
+.workspace-form .workspace-group { display: flex; align-items: center; gap: .5rem; }
+.workspace-group input { width: auto; }

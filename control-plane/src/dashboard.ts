@@ -1,3 +1,6 @@
+import {createWorkspace,listWorkspaces,workspaceInfo,updateWorkspace,reconcileWorkspace,archiveWorkspace} from './workspaces.js';
+import {repoAdmin} from './shadow.js';
+import {db} from './service.js';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { enrollRepository } from './enrollment.js';
@@ -128,7 +131,7 @@ export async function dashboardRequest(
         }
       }
 
-      if (path !== '/v1/dashboard/prepare' && path !== '/v1/dashboard/enroll') {
+      if (path !== '/v1/dashboard/prepare' && path !== '/v1/dashboard/enroll' && path !== '/v1/dashboard/workspaces') {
         return reply(res, 404, { error: 'not_found' });
       }
     }
@@ -153,6 +156,23 @@ export async function dashboardRequest(
       return reply(res, 200, { account: account.github_username, repositories: await repositoryInventory(account.github) });
     }
 
+    if(path==='/v1/dashboard/workspaces') {
+      const d=JSON.parse(body);
+      if(typeof d.id!=='string' || !/^\d+$/.test(d.id))return reply(res,400,{error:'invalid_id'});
+      switch(d.operation) {
+        case 'list': return reply(res,200,await listWorkspaces(account,d.id));
+        case 'groups': {
+          await repoAdmin(account,d.id);
+          return reply(res,200,(await db.query('SELECT id,name FROM groups WHERE repo_id=$1 AND github_team_id IS NOT NULL',[d.id])).rows);
+        }
+        case 'create': return reply(res,200,await createWorkspace(account,d.id,d.audience));
+        case 'show': return reply(res,200,await workspaceInfo(account,d.id));
+        case 'members': return reply(res,200,await updateWorkspace(account,d.id,d.audience));
+        case 'reconcile': await workspaceInfo(account,d.id);await reconcileWorkspace(d.id);return reply(res,200,await workspaceInfo(account,d.id));
+        case 'archive': return reply(res,200,await archiveWorkspace(account,d.id));
+        default: return reply(res,400,{error:'invalid_operation'});
+      }
+    }
     const { owner, repo, commit } = JSON.parse(body);
     if (typeof owner !== 'string' || !/^[a-zA-Z0-9-]{1,39}$/.test(owner)
       || typeof repo !== 'string' || !/^[a-zA-Z0-9_.-]{1,100}$/.test(repo) || repo === '.' || repo === '..') {
@@ -171,6 +191,7 @@ export async function dashboardRequest(
     }
     return reply(res, 201, await enrollRepository(account, owner, repo, commit));
   } catch (error) {
+    if(path==='/v1/dashboard/workspaces' && error instanceof Error && error.message==='administrator required')return reply(res,403,{error:'administrator_required'});
     if (path === '/v1/dashboard/prepare' && (error as { status?: number }).status === 404) {
       return reply(res, 409, { error: 'policy_unavailable' });
     }

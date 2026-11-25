@@ -84,6 +84,11 @@ enum Action {
         #[command(subcommand)]
         action: BranchAction,
     },
+    /// Manage private collaboration workspaces and their shared audience.
+    Workspace {
+        #[command(subcommand)]
+        action: WorkspaceAction,
+    },
     /// Decrypt a whole-file CI blob using an OIDC-authenticated ephemeral key request.
     CiDecrypt {
         #[arg(long)]
@@ -158,6 +163,45 @@ enum Action {
     PublicKey,
 }
 #[derive(Subcommand)]
+enum WorkspaceAction {
+    Create {
+        name: String,
+        #[arg(long)]
+        repo: String,
+        #[arg(long)]
+        server: String,
+        #[arg(long, value_delimiter = ',')]
+        allow: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        groups: Vec<String>,
+    },
+    List {
+        #[arg(long)]
+        repo: String,
+        #[arg(long)]
+        server: String,
+    },
+    Show {
+        id: String,
+        #[arg(long)]
+        server: String,
+    },
+    Members {
+        id: String,
+        #[arg(long)]
+        server: String,
+        #[arg(long, value_delimiter = ',')]
+        allow: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        groups: Vec<String>,
+    },
+    Reconcile {
+        id: String,
+        #[arg(long)]
+        server: String,
+    },
+}
+#[derive(Subcommand)]
 enum BranchAction {
     Resume {
         name: String,
@@ -171,8 +215,14 @@ enum BranchAction {
     },
     Create {
         name: String,
+        #[arg(
+            long,
+            required_unless_present = "workspace",
+            conflicts_with = "workspace"
+        )]
+        allow: Option<String>,
         #[arg(long)]
-        allow: String,
+        workspace: Option<String>,
         #[arg(long)]
         server: String,
         #[arg(long)]
@@ -608,6 +658,56 @@ fn main() -> Result<()> {
             context,
         );
     }
+    if let Action::Workspace { action } = &cli.command {
+        use serde_json::json;
+        return match action {
+            WorkspaceAction::Create {
+                name,
+                repo,
+                server,
+                allow,
+                groups,
+            } => bettergit::branch::workspace_request(
+                server,
+                "POST",
+                Some(repo),
+                None,
+                Some(
+                    json!({"name":name,"allow":allow.iter().map(|s|s.trim_start_matches('@')).collect::<Vec<_>>(),"groups":groups}),
+                ),
+                false,
+            ),
+            WorkspaceAction::List { repo, server } => {
+                bettergit::branch::workspace_request(server, "GET", Some(repo), None, None, false)
+            }
+            WorkspaceAction::Show { id, server } => {
+                bettergit::branch::workspace_request(server, "GET", None, Some(id), None, false)
+            }
+            WorkspaceAction::Members {
+                id,
+                server,
+                allow,
+                groups,
+            } => bettergit::branch::workspace_request(
+                server,
+                "PUT",
+                None,
+                Some(id),
+                Some(
+                    json!({"allow":allow.iter().map(|s|s.trim_start_matches('@')).collect::<Vec<_>>(),"groups":groups}),
+                ),
+                false,
+            ),
+            WorkspaceAction::Reconcile { id, server } => bettergit::branch::workspace_request(
+                server,
+                "POST",
+                None,
+                Some(id),
+                Some(json!({})),
+                true,
+            ),
+        };
+    }
     if let Action::Branch { action } = &cli.command {
         return match action {
             BranchAction::Resume { name, server } => bettergit::branch::resume(server, name),
@@ -615,9 +715,16 @@ fn main() -> Result<()> {
             BranchAction::Create {
                 name,
                 allow,
+                workspace,
                 server,
                 repo,
-            } => bettergit::branch::create(server, repo, name, allow),
+            } => bettergit::branch::create(
+                server,
+                repo,
+                name,
+                allow.as_deref(),
+                workspace.as_deref(),
+            ),
             BranchAction::Publish { name, base, server } => {
                 bettergit::branch::publish(server, name, base)
             }
@@ -1034,6 +1141,6 @@ fn main() -> Result<()> {
         }
         Action::Filter => unreachable!(),
         Action::CheckStaged { .. } => unreachable!(),
-        Action::PublicKey => unreachable!(),
+        Action::Workspace { .. } | Action::PublicKey => unreachable!(),
     }
 }
