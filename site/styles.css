@@ -6,7 +6,7 @@ body {
   min-height: 100svh;
   margin: 0;
   padding: clamp(1rem, 4vw, 2rem);
-  background: #1d1d1d;
+  background: #101010;
 }
 .page {
   width: min(100%, 36rem);
@@ -14,9 +14,9 @@ body {
   text-align: center;
   font: 16px/1.5 var(--font-sans, Inter, system-ui, sans-serif);
   --subtle: #aeaeae;
-  --rule: #414141;
-  --tray: #282828;
-  --paper: #222;
+  --rule: #323232;
+  --tray: #1b1b1b;
+  --paper: #151515;
   --focus: #91bfff;
 }
 h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
