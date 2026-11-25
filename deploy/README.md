@@ -25,7 +25,7 @@ docker compose logs --tail=50 control-plane proxy
 
 On an empty database volume, Postgres applies the SQL files in order and creates a separate runtime login. Postgres data and TLS certificates persist in Docker volumes. The database connection stays on a private Docker network on this VM. For a separate database host, follow the [native setup](../control-plane/README.md) for authenticated TLS and database grants.
 
-To verify HTTPS routing, a credential-free `GET /` should return `403`. Then confirm a successful signed delivery in the App's **Advanced → Recent deliveries** view. Use the [CLI enrollment steps](../README.md#managed-directory) and the [staging validation steps](../docs/validation.md#production-release-gates) to test actual login, enrollment and merge checks before relying on them.
+Open your domain over HTTPS to verify that Caddy serves the Better Git landing page. The control plane handles `/v1/*` and `/webhooks/github`. Confirm a successful signed delivery in the App's **Advanced → Recent deliveries** view. Use the [CLI enrollment steps](../README.md#managed-directory) and the [staging validation steps](../docs/validation.md#production-release-gates) to test actual login, enrollment and merge checks before relying on them.
 
 ## Back up and upgrade
 

@@ -13,5 +13,16 @@
 	request_body {
 		max_size 25MiB
 	}
-	reverse_proxy control-plane:3000
+	@controlPlane path /v1 /v1/* /webhooks/github
+	handle @controlPlane {
+		reverse_proxy control-plane:3000
+	}
+	handle {
+		root * /srv/bettergit
+		header {
+			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+			X-Content-Type-Options nosniff
+		}
+		file_server
+	}
 }
