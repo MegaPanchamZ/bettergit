@@ -10,54 +10,22 @@
   <script src="/copy.js" defer></script>
 </head>
 <body>
-  <div class="page">
-    <header class="header">
-      <a class="brand" href="/">
-        <img src="/icon.svg" width="32" height="32" alt="">
-        Better Git
-      </a>
-      <a class="repo-link" href="https://github.com/MegaPanchamZ/bettergit">GitHub</a>
-    </header>
-
-    <main>
-      <section class="hero" aria-labelledby="headline">
-        <p class="status"><span aria-hidden="true"></span>Open source · Development preview</p>
-        <h1 id="headline">Encrypt files before <span>Git stores them.</span></h1>
-        <p class="intro">Keep your usual Git workflow. Choose which files Better Git encrypts and share the keys with authorized teammates.</p>
-
-        <div class="install">
-          <div class="install-bar">
-            <span>Install from source</span>
-            <button type="button" id="copy-install" hidden>Copy</button>
-          </div>
-          <pre><code id="install-command">git clone https://github.com/MegaPanchamZ/bettergit.git
+  <main class="page">
+    <h1>Better Git</h1>
+    <p class="pitch">Encrypt files before Git stores them.</p>
+    <section class="install" aria-labelledby="install-title">
+      <div class="bar"><span id="install-title">Install from source</span><button type="button" id="copy-install" hidden>Copy</button></div>
+      <pre><code id="install-command">git clone https://github.com/MegaPanchamZ/bettergit.git
 cd bettergit
 cargo install --locked --path .</code></pre>
-        </div>
-        <p id="copy-status" class="visually-hidden" role="status"></p>
-
-        <nav class="actions" aria-label="Get started">
-          <a class="primary" href="https://github.com/MegaPanchamZ/bettergit#install-and-use">Quickstart</a>
-          <a class="secondary" href="https://github.com/MegaPanchamZ/bettergit/blob/main/deploy/README.md">Self-host</a>
-        </nav>
-      </section>
-
-      <section class="example" aria-labelledby="example-heading">
-        <h2 id="example-heading"><code>.env</code> <span>Example with a dummy value</span></h2>
-        <dl class="example-values">
-          <div>
-            <dt>In your working copy</dt>
-            <dd><code>API_TOKEN=<span>demo-token</span></code></dd>
-          </div>
-          <div>
-            <dt>In Git</dt>
-            <dd><code>API_TOKEN=<span>ENC[v2:…]</span></code></dd>
-          </div>
-        </dl>
-      </section>
-    </main>
-
-    <footer><p>Use dummy secrets while evaluating this preview.</p></footer>
-  </div>
+      <p id="copy-status" class="visually-hidden" role="status"></p>
+    </section>
+    <nav aria-label="Resources">
+      <a href="https://github.com/MegaPanchamZ/bettergit#install-and-use">Quickstart</a>
+      <a href="https://github.com/MegaPanchamZ/bettergit/blob/main/deploy/README.md">Self-host</a>
+      <a href="https://github.com/MegaPanchamZ/bettergit">GitHub</a>
+    </nav>
+    <p class="note">Development preview. Use dummy secrets.</p>
+  </main>
 </body>
 </html>
