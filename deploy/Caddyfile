@@ -20,7 +20,7 @@
 	handle {
 		root * /srv/bettergit
 		header {
-			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
 			X-Content-Type-Options nosniff
 		}
 		file_server

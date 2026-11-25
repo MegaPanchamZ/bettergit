@@ -124,12 +124,14 @@ If the filter refuses an invalid index blob, inspect the committed history and i
 
 An organization owner can [install the Better Git App](https://github.com/apps/better-git-app/installations/new) on selected repositories. Start with a disposable organization repository and dummy secrets while Better Git is in development preview.
 
-Install the CLI and follow [policy and local setup](#policy-and-local-setup). Commit the policy with its signing keys to the repository's default branch. Then, from the repository checkout, sign in and enroll it as a repository administrator.
+Install the CLI and follow [policy and local setup](#policy-and-local-setup). Commit the policy with its signing keys to the repository's default branch. A repository administrator can review the commit and enroll it in the [dashboard](https://bettergit.app/dashboard/) or use the CLI from the repository checkout.
 
 ```sh
 bettergit login --client-id Iv23lig8vf1PwnacamJA --server https://bettergit.app
 bettergit enroll --server https://bettergit.app OWNER REPO
 ```
+
+The dashboard displays the approved path-to-team policy and links to GitHub access and branch rules. Agents can read the same inventory through [the JSON API](https://bettergit.app/agents.md#inspect-repository-policy-and-enrollment).
 
 Use `https://bettergit.app` as the server for the remaining [managed directory commands](#managed-directory). Before requiring **Better Git merge encryption guard** in your branch rules, verify that the App reports the check on a pull request. The hosted App supports team-based key distribution and merge checks. Restricted companion branches require the self-hosted setup and its additional GitHub permissions.
 

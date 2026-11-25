@@ -1,6 +1,8 @@
 import { createServer } from 'node:http';
 import { app,db,user,access,envelopeSchema,fetchEnvelope } from './service.js';
-import {drainGuardDelivery,matching} from './guard.js';
+import {drainGuardDelivery} from './guard.js';
+import { enrollRepository } from './enrollment.js';
+import { dashboardRequest } from './dashboard.js';
 import {drainOffboardingDelivery,drainShadowRevocation} from './offboarding.js';
 import {createShadow,publishShadow,authorizePublish,joinShadow} from './shadow.js';
 import {requestKey,consumeKey,approveKey} from './oidc.js';
@@ -33,6 +35,7 @@ const server=createServer(async(req,res)=>{
       const result=await consumeKey(ciFetch[1]!,req.headers.authorization?.replace(/^Bearer /,'')??'',req.socket.remoteAddress??'127.0.0.1');
       res.setHeader('Content-Type','application/json');res.writeHead(result?200:202).end(JSON.stringify(result??{pending:true}));return;
     }
+    if(await dashboardRequest(req,res,url.pathname,body)) return;
     const u=await user(req.headers.authorization?.replace(/^Bearer /,'')??'');
     const data=body?JSON.parse(body):{};
     if(req.method==='PUT' && url.pathname==='/v1/identity') {
@@ -44,17 +47,7 @@ const server=createServer(async(req,res)=>{
     }
     if(req.method==='POST' && url.pathname==='/v1/repos') {
       if(typeof data.owner!=='string' || typeof data.repo!=='string') throw new Error('invalid repository');
-      const {data:r}=await u.github.rest.repos.get({owner:data.owner,repo:data.repo});
-      if(!r.permissions?.admin) throw new Error('administrator required');
-      const installation=await app.octokit.rest.apps.getRepoInstallation({owner:data.owner,repo:data.repo});
-      const gh=await app.getInstallationOctokit(installation.data.id);
-      const {data:head}=await gh.rest.repos.getCommit({owner:data.owner,repo:data.repo,ref:r.default_branch});
-      const {data:content}=await gh.rest.repos.getContent({owner:data.owner,repo:data.repo,path:'.access.yml',ref:head.sha});
-      if(Array.isArray(content) || !('content' in content)) throw new Error('policy missing');
-      const policy=Buffer.from(content.content,'base64').toString();
-      await matching(policy,[]);
-      const {rows}=await db.query('INSERT INTO repos(github_repo_id,org_name,repo_name,installation_id,approved_policy,baseline_sha) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(github_repo_id) DO UPDATE SET approved_policy=$5,baseline_sha=$6 RETURNING id',[r.id,r.owner.login.toLowerCase(),r.name,installation.data.id,policy,head.sha]);
-      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(rows[0]));return;
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await enrollRepository(u,data.owner,data.repo)));return;
     }
     const repoInfo=url.pathname.match(/^\/v1\/repos\/(\d+)$/);
     if(req.method==='GET' && repoInfo) {

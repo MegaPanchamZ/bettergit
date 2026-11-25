@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Repositories · Better Git</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/dashboard/dashboard.css">
+  <script src="/dashboard/dashboard.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <a href="/">Better Git</a>
+    <div class="account" id="account" hidden>
+      <span id="username"></span>
+      <button type="button" id="logout">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <section id="login" class="login" hidden>
+      <h1>Repository dashboard</h1>
+      <p>See which teams your policy assigns to protected files and manage repository enrollment.</p>
+      <button id="sign-in" type="button" class="primary">Sign in with GitHub</button>
+      <div id="device" hidden>
+        <p>Enter this code on GitHub.</p>
+        <code id="device-code"></code>
+        <a href="https://github.com/login/device" target="_blank" rel="noopener">Open GitHub device sign-in ↗</a>
+      </div>
+    </section>
+    <section id="inventory" hidden>
+      <div class="heading">
+        <h1>Repositories</h1>
+        <div class="actions inventory-links">
+          <a href="https://github.com/apps/better-git-app/installations/new">Install hosted App ↗</a>
+          <a href="https://github.com/MegaPanchamZ/bettergit#hosted-better-git">Setup guide ↗</a>
+        </div>
+      </div>
+      <div class="workspace">
+        <div class="sidebar">
+          <label class="visually-hidden" for="search">Filter repositories</label>
+          <input id="search" type="search" placeholder="Filter repositories">
+          <ul id="repos" aria-label="Repositories"></ul>
+        </div>
+        <section id="detail" class="detail" aria-label="Repository details"></section>
+      </div>
+    </section>
+    <p id="status" role="status">Loading repositories…</p>
+    <button id="retry" type="button" hidden>Retry</button>
+    <noscript>The dashboard requires JavaScript.</noscript>
+  </main>
+</body>
+</html>
