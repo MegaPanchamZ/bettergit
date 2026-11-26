@@ -6,8 +6,8 @@
   <title>Repositories · Better Git</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/dashboard/dashboard.css?v=pickers">
-  <script src="/dashboard/dashboard.js?v=pickers" defer></script>
+  <link rel="stylesheet" href="/dashboard/dashboard.css?v=inventory-status">
+  <script src="/dashboard/dashboard.js?v=inventory-status" defer></script>
 </head>
 <body>
   <header class="top">
@@ -28,6 +28,15 @@
         <a href="https://github.com/login/device" target="_blank" rel="noopener">Open GitHub device sign-in ↗</a>
       </div>
     </section>
+    <div id="dashboard-notices" class="dashboard-notices">
+      <p id="status"><span id="enrollment-alert" role="alert"></span><span id="status-message" role="status">Loading repositories…</span><span id="enrollment-notices"></span></p>
+      <div class="notice-actions">
+        <button id="dismiss-enrollment-notices" type="button" hidden>Dismiss confirmations</button>
+        <button id="retry" type="button" hidden>Retry</button>
+        <div id="additional-retries" hidden></div>
+      </div>
+    </div>
+    <div id="enrollment-announcements" class="visually-hidden" role="log" aria-live="polite" aria-atomic="false" aria-relevant="additions"></div>
     <section id="inventory" hidden>
       <div class="heading">
         <h1>Repositories</h1>
@@ -53,23 +62,21 @@
               </select>
             </div>
           </div>
-          <div class="results" id="results">
+          <div class="results" id="results" tabindex="-1">
             <ul id="repos" aria-label="Repositories"></ul>
             <p id="empty-results" class="muted" hidden></p>
           </div>
           <footer class="results-footer">
             <span id="result-count" role="status"></span>
-            <div class="pagination" id="pagination" hidden>
-              <button id="previous" type="button" aria-label="Previous page">←</button>
-              <button id="next" type="button" aria-label="Next page">→</button>
-            </div>
           </footer>
         </section>
         <section id="detail" class="detail" aria-label="Repository details" tabindex="-1"></section>
+        <section id="filtered-detail" class="detail" aria-label="Filtered repository details" hidden>
+          <p id="filter-message" class="muted" role="status"></p>
+          <button id="clear-filters" type="button">Clear filters</button>
+        </section>
       </div>
     </section>
-    <p id="status" role="status">Loading repositories…</p>
-    <button id="retry" type="button" hidden>Retry</button>
     <noscript>The dashboard requires JavaScript.</noscript>
   </main>
 </body>
