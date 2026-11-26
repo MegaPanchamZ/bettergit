@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { app,db,user,access,envelopeSchema,fetchEnvelope } from './service.js';
+import { db,user,access,repositoryPermission,envelopeSchema,fetchEnvelope } from './service.js';
 import {drainGuardDelivery} from './guard.js';
 import { enrollRepository } from './enrollment.js';
 import { dashboardRequest } from './dashboard.js';
@@ -51,19 +51,19 @@ const server=createServer(async(req,res)=>{
     }
     const repoInfo=url.pathname.match(/^\/v1\/repos\/(\d+)$/);
     if(req.method==='GET' && repoInfo) {
-      const {rows}=await db.query('SELECT id,org_name,repo_name FROM repos WHERE id=$1',[repoInfo[1]]);const r=rows[0];if(!r)throw new Error('repository unavailable');
+      const {rows}=await db.query('SELECT id,org_name,repo_name,github_repo_id FROM repos WHERE id=$1',[repoInfo[1]]);const r=rows[0];if(!r)throw new Error('repository unavailable');
       const {data:repository}=await u.github.rest.repos.get({owner:r.org_name,repo:r.repo_name});
-      if(!repository.permissions?.pull)throw new Error('repository access required');
-      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(r));return;
+      if(repository.id!==Number(r.github_repo_id) || !repository.permissions?.pull)throw new Error('repository access required');
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id:r.id,org_name:r.org_name,repo_name:r.repo_name}));return;
     }
     const groupCreate=url.pathname.match(/^\/v1\/repos\/(\d+)\/groups$/);
     if(req.method==='POST' && groupCreate) {
       const {rows}=await db.query('SELECT * FROM repos WHERE id=$1',[groupCreate[1]]);const r=rows[0];if(!r) throw new Error('repo missing');
-      const gh=await app.getInstallationOctokit(Number(r.installation_id));
-      const {data:perm}=await gh.rest.repos.getCollaboratorPermissionLevel({owner:r.org_name,repo:r.repo_name,username:u.github_username});if(perm.permission!=='admin') throw new Error('administrator required');
+      const {gh,ownerId,permission}=await repositoryPermission(r,u.github_id,u.github_username);if(permission!=='admin') throw new Error('administrator required');
       if(typeof data.name!=='string' || !/^github-team:[a-zA-Z0-9_-]+$/.test(data.name)) throw new Error('invalid group');
       const slug=data.name.slice('github-team:'.length);
       const {data:team}=await gh.rest.teams.getByName({org:r.org_name,team_slug:slug});
+      if(team.organization?.id!==ownerId) throw new Error('team belongs to a different organization');
       if(data.teamId!==undefined && (!Number.isSafeInteger(data.teamId) || data.teamId!==team.id)) throw new Error('team does not match verified ID');
       const {rows:g}=await db.query('INSERT INTO groups(repo_id,name,github_team_slug,github_team_id) VALUES($1,$2,$3,$4) ON CONFLICT(repo_id,name) DO UPDATE SET github_team_id=$4 WHERE groups.github_team_id=$4 OR (groups.github_team_id IS NULL AND $5::boolean) RETURNING id',[r.id,data.name,slug,team.id,data.teamId!==undefined]);
       if(!g[0]) throw new Error('existing group is bound to a different team');

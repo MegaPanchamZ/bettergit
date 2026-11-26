@@ -19,21 +19,44 @@ export async function user(token: string) {
   const { rows } = await db.query('INSERT INTO users(github_id,github_username) VALUES($1,$2) ON CONFLICT(github_id) DO UPDATE SET github_username=$2 RETURNING *', [u.id,u.login]);
   return { ...rows[0], github };
 }
+const positive = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+type Enrolled = { github_repo_id: string | number; org_name: string; repo_name: string; installation_id: string | number };
+// Names are mutable. Authorize only when the enrolled installation still sees
+// the stored name as the enrolled immutable repository ID.
+export async function enrolledRepository(row: Enrolled) {
+  const id = Number(row.github_repo_id), installation = Number(row.installation_id);
+  if (!positive(id) || !positive(installation)) throw new Error('forbidden');
+  const gh = await app.getInstallationOctokit(installation);
+  const { data } = await gh.rest.repos.get({ owner: row.org_name, repo: row.repo_name });
+  if (data.id !== id || !positive(data.owner?.id)) throw new Error('forbidden');
+  return { gh, ownerId: data.owner.id };
+}
+type Target = Awaited<ReturnType<typeof enrolledRepository>>;
+// The permission answer must describe the same immutable account that authenticated.
+export async function repositoryPermission(row: Enrolled, githubId: string | number, username: string, target?: Target) {
+  const account = Number(githubId);
+  if (!positive(account) || typeof username !== 'string' || !username) throw new Error('forbidden');
+  const { gh, ownerId } = target ?? await enrolledRepository(row);
+  const { data } = await gh.rest.repos.getCollaboratorPermissionLevel({ owner: row.org_name, repo: row.repo_name, username });
+  if (data.user?.id !== account) throw new Error('forbidden');
+  return { gh, ownerId, permission: data.permission };
+}
 export async function access(userId: string, groupId: string, admin = false) {
-  const { rows } = await db.query('SELECT g.*,r.org_name,r.repo_name,r.installation_id FROM groups g JOIN repos r ON r.id=g.repo_id WHERE g.id=$1', [groupId]);
+  const { rows } = await db.query('SELECT g.*,r.org_name,r.repo_name,r.installation_id,r.github_repo_id FROM groups g JOIN repos r ON r.id=g.repo_id WHERE g.id=$1', [groupId]);
   const g = rows[0]; if (!g) throw new Error('forbidden');
-  const gh = await app.getInstallationOctokit(Number(g.installation_id));
   const { rows: users } = await db.query('SELECT github_username,github_id FROM users WHERE id=$1',[userId]);
-  const current=users[0]? await gh.request('GET /user/{account_id}',{account_id:Number(users[0].github_id)}):null;
-  const username = current?.data.login; if (!username) throw new Error('forbidden');
-  const { data: permission } = await gh.rest.repos.getCollaboratorPermissionLevel({ owner:g.org_name,repo:g.repo_name,username });
-  if (admin) { if (permission.permission !== 'admin') throw new Error('forbidden'); }
+  if (!users[0]) throw new Error('forbidden');
+  const target = await enrolledRepository(g);
+  const { gh, ownerId } = target;
+  const current = await gh.request('GET /user/{account_id}',{account_id:Number(users[0].github_id)});
+  const username = current.data.login; if (!username) throw new Error('forbidden');
+  const { permission } = await repositoryPermission(g, users[0].github_id, username, target);
+  if (admin) { if (permission !== 'admin') throw new Error('forbidden'); }
   else {
-    if (!['read','triage','write','maintain','admin'].includes(permission.permission)) throw new Error('forbidden');
-    if (!g.github_team_id) throw new Error('group team ID requires verified enrollment');
-    const { data: org } = await gh.rest.orgs.get({org:g.org_name});
+    if (!['read','triage','write','maintain','admin'].includes(permission)) throw new Error('forbidden');
+    if (!positive(Number(g.github_team_id))) throw new Error('group team ID requires verified enrollment');
     const { data: member } = await gh.request('GET /organizations/{org_id}/team/{team_id}/memberships/{username}', {
-      org_id: org.id, team_id: Number(g.github_team_id), username,
+      org_id: ownerId, team_id: Number(g.github_team_id), username,
     });
     if (member.state !== 'active') throw new Error('forbidden');
   }

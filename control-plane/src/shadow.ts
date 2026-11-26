@@ -1,12 +1,11 @@
 import {randomBytes} from 'node:crypto';
-import {db,app} from './service.js';
+import {db,app,repositoryPermission} from './service.js';
 import {z} from 'zod';
 export const shadowInput=z.object({name:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),allow:z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/)).min(1).max(50)}).strict();
 async function repoAdmin(user:any,repoId:string) {
  const {rows}=await db.query('SELECT * FROM repos WHERE id=$1',[repoId]);const repo=rows[0];if(!repo) throw new Error('repository unavailable');
- const gh=await app.getInstallationOctokit(Number(repo.installation_id));
- const {data:permission}=await gh.rest.repos.getCollaboratorPermissionLevel({owner:repo.org_name,repo:repo.repo_name,username:user.github_username});
- if(permission.permission!=='admin') throw new Error('administrator required');return {repo,gh};
+ const {gh,permission}=await repositoryPermission(repo,user.github_id,user.github_username);
+ if(permission!=='admin') throw new Error('administrator required');return {repo,gh};
 }
 export async function createShadow(user:any,repoId:string,input:unknown) {
  const d=shadowInput.parse(input);const {repo,gh}=await repoAdmin(user,repoId);
@@ -66,7 +65,7 @@ export async function authorizePublish(user:any,shadowId:string) {
  const {repo,gh}=await repoAdmin(user,shadow.parent_repo_id);
  if(!shadow.allowed_ids.includes(Number(user.github_id))) throw new Error('not allowed');
  const {data:org}=await gh.rest.orgs.get({org:repo.org_name});if(org.default_repository_permission!=='none') throw new Error('privacy drift');
- const {data:info}=await gh.rest.repos.get({owner:repo.org_name,repo:shadow.repo_name});if(!info.private || info.fork) throw new Error('shadow privacy changed');
+ const {data:info}=await gh.rest.repos.get({owner:repo.org_name,repo:shadow.repo_name});if(info.id!==Number(shadow.github_repo_id) || !info.private || info.fork) throw new Error('shadow privacy changed');
  const teams=await gh.paginate(gh.rest.repos.listTeams,{owner:repo.org_name,repo:shadow.repo_name});if(teams.length) throw new Error('unexpected team access');
  const collaborators=await gh.paginate(gh.rest.repos.listCollaborators,{owner:repo.org_name,repo:shadow.repo_name,affiliation:'direct'});
  if(collaborators.some(c=>!shadow.allowed_ids.includes(c.id) && !c.permissions?.admin)) throw new Error('unexpected collaborator');
@@ -111,13 +110,12 @@ export async function revokeShadows(githubId:number,org:string,repository?:numbe
 
 // Joining requires current membership and immutable allow-list identity, not admin access.
 export async function joinShadow(user:any,shadowId:string) {
- const {rows}=await db.query("SELECT s.*,r.org_name,r.repo_name AS parent_name,r.installation_id,r.baseline_sha FROM shadow_repos s JOIN repos r ON r.id=s.parent_repo_id WHERE s.id=$1 AND s.status='ready'",[shadowId]);
+ const {rows}=await db.query("SELECT s.*,r.org_name,r.repo_name AS parent_name,r.installation_id,r.baseline_sha,r.github_repo_id AS parent_github_repo_id FROM shadow_repos s JOIN repos r ON r.id=s.parent_repo_id WHERE s.id=$1 AND s.status='ready'",[shadowId]);
  const shadow=rows[0];if(!shadow || !shadow.allowed_ids.includes(Number(user.github_id)))throw new Error('shadow unavailable');
- const gh=await app.getInstallationOctokit(Number(shadow.installation_id));
+ const {gh,permission}=await repositoryPermission({github_repo_id:shadow.parent_github_repo_id,org_name:shadow.org_name,repo_name:shadow.parent_name,installation_id:shadow.installation_id},user.github_id,user.github_username);
  await gh.rest.orgs.checkMembershipForUser({org:shadow.org_name,username:user.github_username});
- const {data:permission}=await gh.rest.repos.getCollaboratorPermissionLevel({owner:shadow.org_name,repo:shadow.parent_name,username:user.github_username});
- if(permission.permission==='none')throw new Error('parent read access required');
+ if(!['read','triage','write','maintain','admin'].includes(permission))throw new Error('parent read access required');
  const {data:org}=await gh.rest.orgs.get({org:shadow.org_name});if(org.default_repository_permission!=='none')throw new Error('privacy drift');
- const {data:info}=await gh.rest.repos.get({owner:shadow.org_name,repo:shadow.repo_name});if(!info.private || info.fork)throw new Error('privacy drift');
+ const {data:info}=await gh.rest.repos.get({owner:shadow.org_name,repo:shadow.repo_name});if(info.id!==Number(shadow.github_repo_id) || !info.private || info.fork)throw new Error('privacy drift');
  return {id:shadow.id,baseline:shadow.baseline_sha,repo:String(shadow.parent_repo_id),remote:`git@github.com:${shadow.org_name}/${shadow.repo_name}.git`,branch:shadow.branch_name};
 }

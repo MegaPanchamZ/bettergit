@@ -40,10 +40,12 @@ test('dashboard and agent inventory share current GitHub access', { skip: !proce
     const { signer } = JSON.parse(await readFile(new URL('../../tests/signed-browser-fixture.json', import.meta.url), 'utf8'));
     const policy = `version: 1\norg: acme\nrules:\n  - path: config.env\n    mode: value\n    allow: [github-team:infra]\n    signing_key: ${signer}\n`;
     let head = 'b'.repeat(40);
+    let installedId = 5;
     const content = { content: Buffer.from(policy).toString('base64') };
     app.octokit.rest.apps.getRepoInstallation = (async () => ({ data: { id: 10 } })) as unknown as typeof app.octokit.rest.apps.getRepoInstallation;
     app.getInstallationOctokit = (async () => ({
       rest: { repos: {
+        get: async () => ({ data: { id: installedId } }),
         getCommit: async () => ({ data: { sha: head } }),
         getContent: async () => ({ data: content }),
       } },
@@ -138,6 +140,11 @@ test('dashboard and agent inventory share current GitHub access', { skip: !proce
     const moved = await action('enroll', { ...target, commit: reviewedHead });
     assert.equal(moved.status, 409);
     assert.deepEqual(await moved.json(), { error: 'default_branch_changed' });
+    // The installation resolves the name to a different repository than the administrator approved.
+    installedId = 6;
+    assert.equal((await action('enroll', { ...target, commit: head })).status, 502);
+    assert.equal((await db.query('SELECT 1 FROM repos WHERE github_repo_id IN (5,6)')).rowCount, 0);
+    installedId = 5;
     assert.equal((await action('enroll', { ...target, commit: head })).status, 201);
     const enrolledAgain = await action('enroll', { ...target, commit: head });
     assert.equal(enrolledAgain.status, 409);

@@ -26,16 +26,30 @@ test('migrations, offboarding, replay deduplication, and immutable CI policies',
    await once(receiver,'listening');
    const address=receiver.address();
    assert(address && typeof address!=='string');
-   const body=JSON.stringify({action:'removed',organization:{login:'acme'},team:{id:101},member:{id:42}});
+   const event={action:'removed',organization:{login:'acme'},team:{id:101},member:{id:42}};
+   const body=JSON.stringify({...event,installation:{id:1}});
    const signature='sha256='+createHmac('sha256','test').update(body).digest('hex');
    const send=(digest:string)=>fetch(`http://127.0.0.1:${address.port}/webhooks/github`,{method:'POST',body,headers:{
     'x-github-delivery':delivery,'x-github-event':'membership','x-hub-signature-256':digest,
    }});
-   assert.equal((await send('sha256='+'0'.repeat(64))).status,403);
+   // Authentic deliveries from an installation that did not enroll this organization revoke nothing.
+   const deliver=(id:string,content:string)=>fetch(`http://127.0.0.1:${address.port}/webhooks/github`,{method:'POST',body:content,headers:{
+    'x-github-delivery':id,'x-github-event':'membership','x-hub-signature-256':'sha256='+createHmac('sha256','test').update(content).digest('hex'),
+   }});
+   assert.equal((await deliver(randomUUID(),JSON.stringify(event))).status,204);
    assert.equal((await db.query('SELECT * FROM guard_deliveries')).rowCount,0);
+   const foreign=randomUUID();
+   assert.equal((await deliver(foreign,JSON.stringify({...event,installation:{id:2}}))).status,204);
+   await drainOffboardingDelivery();
+   assert((await db.query('SELECT completed_at FROM guard_deliveries WHERE id=$1',[foreign])).rows[0].completed_at instanceof Date);
+   assert.equal((await db.query('SELECT * FROM wrapped_deks')).rowCount,1);
+   assert.equal((await db.query('SELECT * FROM revocations')).rowCount,0);
+   assert.equal((await db.query('SELECT * FROM shadow_revocation_jobs')).rowCount,0);
+   assert.equal((await send('sha256='+'0'.repeat(64))).status,403);
+   assert.equal((await db.query('SELECT * FROM guard_deliveries WHERE id=$1',[delivery])).rowCount,0);
    assert.equal((await send(signature)).status,204);
    assert.equal((await send(signature)).status,204);
-   assert.equal((await db.query('SELECT * FROM guard_deliveries')).rowCount,1);
+   assert.equal((await db.query('SELECT * FROM guard_deliveries WHERE id=$1',[delivery])).rowCount,1);
    assert.equal((await db.query('SELECT * FROM wrapped_deks')).rowCount,1);
    await db.query('ALTER TABLE offboarding_reports ADD CONSTRAINT test_unavailable CHECK (false) NOT VALID');
    await drainOffboardingDelivery();

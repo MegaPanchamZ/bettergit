@@ -11,6 +11,9 @@ export async function enrollRepository(
   if (!repository.permissions?.admin) throw new Error('administrator required');
   const { data: installation } = await app.octokit.rest.apps.getRepoInstallation({ owner, repo });
   const gh = await app.getInstallationOctokit(installation.id);
+  // The App installation must see the same immutable repository the administrator proved access to.
+  const { data: installed } = await gh.rest.repos.get({ owner, repo });
+  if (installed.id !== repository.id) throw new Error('repository changed');
   const { data: head } = await gh.rest.repos.getCommit({ owner, repo, ref: repository.default_branch });
   if (expectedHead !== undefined && head.sha !== expectedHead) throw new Error('default branch changed');
   const { data: content } = await gh.rest.repos.getContent({ owner, repo, path: '.access.yml', ref: head.sha });
