@@ -17,6 +17,18 @@ pub struct Trust {
 pub fn audience(base: &str, group: &str, recipient: &str) -> String {
     format!("{base}:group:{group}:recipient:{recipient}")
 }
+
+fn token_validation(trust: &Trust, recipient: &str) -> jsonwebtoken::Validation {
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
+    validation.set_issuer(&[&trust.issuer]);
+    validation.set_audience(&[audience(&trust.audience, &trust.group_id, recipient)]);
+    validation.sub = Some(trust.subject.clone());
+    validation.validate_nbf = true;
+    validation.leeway = 0;
+    validation
+}
+
 pub fn verify(token: &str, recipient: &str, trust: &Trust) -> Result<Value> {
     ensure!(
         trust.issuer == "https://token.actions.githubusercontent.com"
@@ -39,19 +51,15 @@ pub fn verify(token: &str, recipient: &str, trust: &Trust) -> Result<Value> {
         .find(header.kid.as_deref().context("missing signing key ID")?)
         .context("unknown signing key")?;
     let key = jsonwebtoken::DecodingKey::from_jwk(jwk)?;
-    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
-    validation.set_issuer(&[&trust.issuer]);
-    validation.set_audience(&[audience(&trust.audience, &trust.group_id, recipient)]);
-    validation.sub = Some(trust.subject.clone());
-    validation.leeway = 0;
-    let claims = jsonwebtoken::decode::<Value>(token, &key, &validation)?.claims;
+    let claims =
+        jsonwebtoken::decode::<Value>(token, &key, &token_validation(trust, recipient))?.claims;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
     let issued = claims["iat"].as_u64().context("missing issued time")?;
     let expires = claims["exp"].as_u64().context("missing expiry")?;
     ensure!(
-        issued <= now + 30 && expires >= now && expires.saturating_sub(issued) <= 7200,
+        issued <= now + 30 && expires > now && expires > issued && expires - issued <= 7200,
         "invalid token lifetime"
     );
     ensure!(
@@ -93,4 +101,37 @@ pub fn verify(token: &str, recipient: &str, trust: &Trust) -> Result<Value> {
         }
     }
     Ok(claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ci_validation_requires_the_pinned_identity_and_recipient() {
+        let trust = Trust {
+            server: "https://bettergit.example".into(),
+            group_id: "42".into(),
+            group: "release".into(),
+            issuer: "https://token.actions.githubusercontent.com".into(),
+            audience: "bettergit".into(),
+            subject: "repo:example/release:environment:production".into(),
+            required_claims: HashMap::new(),
+            key_public: String::new(),
+        };
+        let validation = token_validation(&trust, "recipient");
+
+        assert_eq!(
+            validation.required_spec_claims,
+            ["exp", "iss", "aud", "sub"].map(String::from).into()
+        );
+        assert_eq!(validation.iss, Some([trust.issuer].into()));
+        assert_eq!(validation.sub, Some(trust.subject));
+        assert_eq!(
+            validation.aud,
+            Some(["bettergit:group:42:recipient:recipient".into()].into())
+        );
+        assert!(validation.validate_exp);
+        assert!(validation.validate_nbf);
+    }
 }
