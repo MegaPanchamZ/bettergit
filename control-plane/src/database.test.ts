@@ -47,6 +47,7 @@ test('migrations, offboarding, replay deduplication, and immutable CI policies',
    assert.equal((await db.query('SELECT * FROM shadow_revocation_jobs')).rowCount,0);
    assert.equal((await send('sha256='+'0'.repeat(64))).status,403);
    assert.equal((await db.query('SELECT * FROM guard_deliveries WHERE id=$1',[delivery])).rowCount,0);
+   await db.query("INSERT INTO repos(github_repo_id,org_name,repo_name,installation_id,approved_policy,baseline_sha) VALUES(9,'acme','separate',2,'policy','base')");
    assert.equal((await send(signature)).status,204);
    assert.equal((await send(signature)).status,204);
    assert.equal((await db.query('SELECT * FROM guard_deliveries WHERE id=$1',[delivery])).rowCount,1);
@@ -66,7 +67,7 @@ test('migrations, offboarding, replay deduplication, and immutable CI policies',
   }
   await assert.rejects(()=>db.query('UPDATE groups SET github_team_id=202 WHERE id=1'),/immutable GitHub team ID/);
   await assert.rejects(()=>db.query("INSERT INTO groups(repo_id,name,github_team_slug) VALUES(1,'unbound','unbound')"),/immutable GitHub team ID/);
-  assert.equal((await db.query('SELECT * FROM shadow_revocation_jobs')).rowCount,1);
+  assert.deepEqual((await db.query('SELECT repository FROM shadow_revocation_jobs')).rows,[{repository:'1'}]);
   await db.query(`INSERT INTO shadow_repos(parent_repo_id,github_repo_id,repo_name,branch_name,creator_id,allowed_users,allowed_ids,status)
     VALUES(1,2,'companion','restricted',1,'["removed","other"]','[42,43]','ready')`);
   let unavailable=true;

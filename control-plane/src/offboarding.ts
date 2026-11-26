@@ -34,7 +34,12 @@ export async function offboard(
     await client.query(`INSERT INTO shadow_revocation_jobs(github_id,org_name,repository,require_parent_access_loss)
       VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,[id,org,repo,conditional]);
    };
-   if(githubId!==null) await enqueue(githubId,repository??0,team!==undefined);
+   if(githubId!==null) {
+    const {rows:parents}=await client.query<{github_repo_id:string}>(`SELECT github_repo_id FROM repos
+      WHERE org_name=$1 AND ($2::bigint IS NULL OR installation_id=$2)
+      AND ($3::bigint IS NULL OR github_repo_id=$3) ORDER BY github_repo_id`,[org,installation??null,repository??null]);
+    for(const parent of parents) await enqueue(githubId,parent.github_repo_id,team!==undefined);
+   }
    for(const g of rows) {
     if(githubId===null) await enqueue(g.github_id,g.github_repo_id,true);
     await client.query('SELECT pg_advisory_xact_lock($1::int,$2::int)',[g.user_id,g.group_id]);
