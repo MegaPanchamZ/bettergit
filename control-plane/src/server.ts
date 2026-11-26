@@ -1,3 +1,4 @@
+import {createWorkspace,listWorkspaces,workspaceInfo,updateWorkspace,reconcileWorkspace,drainWorkspaceReconciliation,archiveWorkspace} from './workspaces.js';
 import { createServer } from 'node:http';
 import { app,db,user,access,envelopeSchema,fetchEnvelope } from './service.js';
 import {drainGuardDelivery} from './guard.js';
@@ -38,6 +39,10 @@ const server=createServer(async(req,res)=>{
     if(await dashboardRequest(req,res,url.pathname,body)) return;
     const u=await user(req.headers.authorization?.replace(/^Bearer /,'')??'');
     const data=body?JSON.parse(body):{};
+    if(req.method==='GET' && url.pathname==='/v1/whoami') {
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({login:u.github_username,publicKey:u.age_public_key}));return;
+    }
     if(req.method==='PUT' && url.pathname==='/v1/identity') {
       if(typeof data.publicKey!=='string' || !/^age1[a-z0-9]{58}$/.test(data.publicKey)) throw new Error('invalid public key');
       // Key replacement is explicit recovery work: prevent silent directory substitution.
@@ -68,6 +73,25 @@ const server=createServer(async(req,res)=>{
       const {rows:g}=await db.query('INSERT INTO groups(repo_id,name,github_team_slug,github_team_id) VALUES($1,$2,$3,$4) ON CONFLICT(repo_id,name) DO UPDATE SET github_team_id=$4 WHERE groups.github_team_id=$4 OR (groups.github_team_id IS NULL AND $5::boolean) RETURNING id',[r.id,data.name,slug,team.id,data.teamId!==undefined]);
       if(!g[0]) throw new Error('existing group is bound to a different team');
       res.setHeader('Content-Type','application/json');res.end(JSON.stringify(g[0]));return;
+    }
+    const workspaces=url.pathname.match(/^\/v1\/repos\/(\d+)\/workspaces$/);
+    const workspace=url.pathname.match(/^\/v1\/workspaces\/(\d+)$/);
+    const reconcile=url.pathname.match(/^\/v1\/workspaces\/(\d+)\/reconcile$/);
+    if(workspaces && ['GET','POST'].includes(req.method!)) {
+      const result=req.method==='POST'?await createWorkspace(u,workspaces[1]!,data):await listWorkspaces(u,workspaces[1]!);
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
+    }
+    if(workspace && ['GET','PUT'].includes(req.method!)) {
+      const result=req.method==='PUT'?await updateWorkspace(u,workspace[1]!,data):await workspaceInfo(u,workspace[1]!);
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
+    }
+    if(reconcile && req.method==='POST') {
+      await workspaceInfo(u,reconcile[1]!);await reconcileWorkspace(reconcile[1]!);
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await workspaceInfo(u,reconcile[1]!)));return;
+    }
+    const archive=url.pathname.match(/^\/v1\/workspaces\/(\d+)\/archive$/);
+    if(archive && req.method==='POST') {
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await archiveWorkspace(u,archive[1]!)));return;
     }
     const shadowCreate=url.pathname.match(/^\/v1\/repos\/(\d+)\/shadows$/);
     if(req.method==='POST' && shadowCreate) {res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await createShadow(u,shadowCreate[1]!,data)));return;}
@@ -138,5 +162,6 @@ function runWorker(name:string,processNext:()=>Promise<void>) {
 }
 runWorker('Offboarding delivery',drainOffboardingDelivery);
 runWorker('Shadow revocation',drainShadowRevocation);
+runWorker('Workspace reconciliation',drainWorkspaceReconciliation);
 runWorker('GitHub guard',drainGuardDelivery);
 server.listen(Number(process.env.PORT??3000),process.env.HOST??'127.0.0.1');

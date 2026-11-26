@@ -84,6 +84,11 @@ enum Action {
         #[command(subcommand)]
         action: BranchAction,
     },
+    /// Manage private collaboration workspaces and their shared audience.
+    Workspace {
+        #[command(subcommand)]
+        action: WorkspaceAction,
+    },
     /// Decrypt a whole-file CI blob using an OIDC-authenticated ephemeral key request.
     CiDecrypt {
         #[arg(long)]
@@ -116,8 +121,19 @@ enum Action {
     Init,
     Login {
         #[arg(long)]
-        client_id: String,
-        #[arg(long)]
+        client_id: Option<String>,
+        #[arg(long, default_value = "https://bettergit.app")]
+        server: String,
+    },
+    /// Show the current GitHub account for a Better Git server.
+    Whoami {
+        #[arg(long, default_value = "https://bettergit.app")]
+        server: String,
+    },
+    /// Check account, local identity, and optionally access to a join link.
+    Doctor {
+        target: Option<String>,
+        #[arg(long, default_value = "https://bettergit.app")]
         server: String,
     },
     Sync {
@@ -158,21 +174,67 @@ enum Action {
     PublicKey,
 }
 #[derive(Subcommand)]
+enum WorkspaceAction {
+    Create {
+        name: String,
+        #[arg(long)]
+        repo: String,
+        #[arg(long)]
+        server: String,
+        #[arg(long, value_delimiter = ',')]
+        allow: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        groups: Vec<String>,
+    },
+    List {
+        #[arg(long)]
+        repo: String,
+        #[arg(long)]
+        server: String,
+    },
+    Show {
+        id: String,
+        #[arg(long)]
+        server: String,
+    },
+    Members {
+        id: String,
+        #[arg(long)]
+        server: String,
+        #[arg(long, value_delimiter = ',')]
+        allow: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        groups: Vec<String>,
+    },
+    Reconcile {
+        id: String,
+        #[arg(long)]
+        server: String,
+    },
+}
+#[derive(Subcommand)]
 enum BranchAction {
     Resume {
         name: String,
         #[arg(long)]
         server: String,
     },
+    /// Join a share link or a branch ID in an enrolled checkout.
     Join {
         id: String,
-        #[arg(long)]
+        #[arg(long, default_value = "https://bettergit.app")]
         server: String,
     },
     Create {
         name: String,
+        #[arg(
+            long,
+            required_unless_present = "workspace",
+            conflicts_with = "workspace"
+        )]
+        allow: Option<String>,
         #[arg(long)]
-        allow: String,
+        workspace: Option<String>,
         #[arg(long)]
         server: String,
         #[arg(long)]
@@ -315,7 +377,7 @@ impl Drop for Index {
         self.child.wait().ok();
     }
 }
-fn init(root: &Path, policy: &Policy, base: &Path) -> Result<()> {
+fn init(root: &Path, policy: &Policy, base: &Path, write_attributes: bool) -> Result<()> {
     let id = identity(true)?;
     std::fs::create_dir_all(base)?;
     let tracked = git(&["ls-files", "-z"])?;
@@ -383,7 +445,9 @@ fn init(root: &Path, policy: &Policy, base: &Path) -> Result<()> {
         ));
     }
     text.push_str(end);
-    std::fs::write(attrs, &text)?;
+    if write_attributes {
+        std::fs::write(attrs, &text)?;
+    }
     let info = PathBuf::from(git(&["rev-parse", "--git-path", "info/attributes"])?);
     if let Some(parent) = info.parent() {
         std::fs::create_dir_all(parent)?;
@@ -554,29 +618,109 @@ fn run_filter() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-    if let Action::CheckStaged { json } = cli.command {
+    run(Cli::parse().command)
+}
+fn whoami(server: &str) -> Result<serde_json::Value> {
+    bettergit::client::server(server)?;
+    let info = bettergit::client::request(
+        "GET",
+        &format!("{}/v1/whoami", server.trim_end_matches('/')),
+        None,
+    )?;
+    println!(
+        "Signed in as @{}",
+        info["login"].as_str().context("missing GitHub login")?
+    );
+    Ok(info)
+}
+fn parent_from_join(info: &serde_json::Value) -> Result<&str> {
+    let parent = info["parent"]
+        .as_str()
+        .context("missing parent repository")?;
+    let url = format!("https://github.com/{parent}.git");
+    let (slug, _) = bettergit::branch::github_origin(&url)?;
+    ensure!(slug == parent, "invalid parent repository");
+    Ok(parent)
+}
+fn join_branch(server: &str, target: &str) -> Result<()> {
+    let (id, link) = bettergit::branch::join_target(server, target)?;
+    let info = bettergit::branch::join_info(server, &id)?;
+    if link {
+        let parent = parent_from_join(&info)?;
+        if git(&["rev-parse", "--show-toplevel"]).is_err() {
+            let name = parent.split_once('/').context("invalid parent")?.1;
+            ensure!(
+                !Path::new(name).exists(),
+                "clone directory already exists; enter the parent checkout or use another directory"
+            );
+            let status = Command::new("git")
+                .args([
+                    "clone",
+                    "--",
+                    &format!("https://github.com/{parent}.git"),
+                    name,
+                ])
+                .status()?;
+            ensure!(
+                status.success(),
+                "parent clone failed; configure GitHub HTTPS credentials and verify parent read access"
+            );
+            std::env::set_current_dir(name)?;
+        }
+        let origin = git(&["remote", "get-url", "origin"])?;
+        let (slug, _) = bettergit::branch::github_origin(&origin)?;
+        ensure!(
+            slug.eq_ignore_ascii_case(parent),
+            "run the join command from the parent checkout or an empty directory"
+        );
+        ensure!(
+            git(&["status", "--porcelain"])?.is_empty(),
+            "commit or stash changes first"
+        );
+        let root = PathBuf::from(git(&["rev-parse", "--show-toplevel"])?).canonicalize()?;
+        std::env::set_current_dir(&root)?;
+        init(&root, &Policy::load(&root)?, &cache()?, false)?;
+        run(Action::Sync {
+            server: server.trim_end_matches('/').to_owned(),
+            repo: info["repo"]
+                .as_str()
+                .context("missing repository ID")?
+                .to_owned(),
+        })?;
+        return bettergit::branch::join(server.trim_end_matches('/'), &id, &info);
+    }
+    bettergit::branch::join(server, &id, &info)
+}
+fn run(command: Action) -> Result<()> {
+    if let Action::CheckStaged { json } = command {
         let code = staged::run(json)?;
         if code != 0 {
             std::process::exit(code);
         }
         return Ok(());
     }
-    if matches!(cli.command, Action::Filter) {
+    if matches!(command, Action::Filter) {
         return run_filter();
     }
-    if matches!(cli.command, Action::SnapshotPrivate) {
+    if matches!(command, Action::SnapshotPrivate) {
         return bettergit::branch::snapshot_private();
     }
-    if let Action::GuardPush { remote, url } = &cli.command {
+    if let Action::GuardPush { remote, url } = &command {
         return bettergit::branch::guard_push(remote, url);
     }
-    if matches!(cli.command, Action::PublicKey) {
+    if matches!(command, Action::PublicKey) {
         println!("{}", identity(false)?.to_public());
         return Ok(());
     }
-    if let Action::Login { client_id, server } = &cli.command {
+    if let Action::Login { client_id, server } = &command {
         bettergit::client::server(server)?;
+        let client_id = match client_id.as_deref() {
+            Some(client_id) => client_id,
+            None if server.trim_end_matches('/') == "https://bettergit.app" => {
+                "Iv23lig8vf1PwnacamJA"
+            }
+            None => anyhow::bail!("provide --client-id for this Better Git server"),
+        };
         bettergit::client::login(client_id, server)?;
         let id = identity(true)?;
         bettergit::client::request(
@@ -584,6 +728,38 @@ fn main() -> Result<()> {
             &format!("{}/v1/identity", server.trim_end_matches('/')),
             Some(serde_json::json!({"publicKey":id.to_public().to_string()})),
         )?;
+        whoami(server)?;
+        return Ok(());
+    }
+    if let Action::Whoami { server } = &command {
+        return whoami(server).map(|_| ());
+    }
+    if let Action::Doctor { target, server } = &command {
+        let account = whoami(server)?;
+        let local_key = identity(false)?.to_public().to_string();
+        ensure!(
+            account["publicKey"].as_str() == Some(&local_key),
+            "local keyring identity does not match the registered account"
+        );
+        println!("Local keyring identity matches the account.");
+        if let Some(target) = target {
+            let (id, _) = bettergit::branch::join_target(server, target)?;
+            let info = bettergit::branch::join_info(server, &id)?;
+            let parent = parent_from_join(&info)?;
+            let origin = match git(&["remote", "get-url", "origin"]) {
+                Ok(origin) => {
+                    let (slug, _) = bettergit::branch::github_origin(&origin)?;
+                    ensure!(
+                        slug.eq_ignore_ascii_case(parent),
+                        "current checkout differs from the parent repository"
+                    );
+                    origin
+                }
+                Err(_) => format!("https://github.com/{parent}.git"),
+            };
+            bettergit::branch::remote_check(server, &origin, &info)?;
+            println!("Parent and restricted branch are readable through Git.");
+        }
         return Ok(());
     }
     if let Action::CiDecrypt {
@@ -595,7 +771,7 @@ fn main() -> Result<()> {
         output,
         path,
         whole_file,
-    } = &cli.command
+    } = &command
     {
         let context = path.as_deref().map(|path| (path, *whole_file));
         return bettergit::ci::decrypt(
@@ -608,16 +784,73 @@ fn main() -> Result<()> {
             context,
         );
     }
-    if let Action::Branch { action } = &cli.command {
+    if let Action::Workspace { action } = &command {
+        use serde_json::json;
+        return match action {
+            WorkspaceAction::Create {
+                name,
+                repo,
+                server,
+                allow,
+                groups,
+            } => bettergit::branch::workspace_request(
+                server,
+                "POST",
+                Some(repo),
+                None,
+                Some(
+                    json!({"name":name,"allow":allow.iter().map(|s|s.trim_start_matches('@')).collect::<Vec<_>>(),"groups":groups}),
+                ),
+                false,
+            ),
+            WorkspaceAction::List { repo, server } => {
+                bettergit::branch::workspace_request(server, "GET", Some(repo), None, None, false)
+            }
+            WorkspaceAction::Show { id, server } => {
+                bettergit::branch::workspace_request(server, "GET", None, Some(id), None, false)
+            }
+            WorkspaceAction::Members {
+                id,
+                server,
+                allow,
+                groups,
+            } => bettergit::branch::workspace_request(
+                server,
+                "PUT",
+                None,
+                Some(id),
+                Some(
+                    json!({"allow":allow.iter().map(|s|s.trim_start_matches('@')).collect::<Vec<_>>(),"groups":groups}),
+                ),
+                false,
+            ),
+            WorkspaceAction::Reconcile { id, server } => bettergit::branch::workspace_request(
+                server,
+                "POST",
+                None,
+                Some(id),
+                Some(json!({})),
+                true,
+            ),
+        };
+    }
+    if let Action::Branch { action } = &command {
         return match action {
             BranchAction::Resume { name, server } => bettergit::branch::resume(server, name),
-            BranchAction::Join { id, server } => bettergit::branch::join(server, id),
+            BranchAction::Join { id, server } => join_branch(server, id),
             BranchAction::Create {
                 name,
                 allow,
+                workspace,
                 server,
                 repo,
-            } => bettergit::branch::create(server, repo, name, allow),
+            } => bettergit::branch::create(
+                server,
+                repo,
+                name,
+                allow.as_deref(),
+                workspace.as_deref(),
+            ),
             BranchAction::Publish { name, base, server } => {
                 bettergit::branch::publish(server, name, base)
             }
@@ -626,7 +859,7 @@ fn main() -> Result<()> {
     let root = PathBuf::from(git(&["rev-parse", "--show-toplevel"])?).canonicalize()?;
     std::env::set_current_dir(&root)?;
     let base = cache()?;
-    let policy = if matches!(cli.command, Action::Filter) {
+    let policy = if matches!(command, Action::Filter) {
         Policy::parse(
             &std::fs::read_to_string(base.join("policy.yml"))
                 .context("run bettergit init to pin filter policy")?,
@@ -634,7 +867,7 @@ fn main() -> Result<()> {
     } else {
         Policy::load(&root)?
     };
-    match cli.command {
+    match command {
         Action::PinGroup { group, recipient } => {
             let parsed: age::x25519::Recipient = recipient
                 .parse()
@@ -763,7 +996,7 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
-        Action::Login { .. } => unreachable!(),
+        Action::Login { .. } | Action::Whoami { .. } | Action::Doctor { .. } => unreachable!(),
         Action::CiDecrypt { .. } => unreachable!(),
         Action::Broker {
             server,
@@ -956,7 +1189,7 @@ fn main() -> Result<()> {
                 .write_all(&encoded)?;
             Ok(())
         }
-        Action::Init => init(&root, &policy, &base),
+        Action::Init => init(&root, &policy, &base, true),
         Action::Check {
             path,
             blob,
@@ -1034,6 +1267,6 @@ fn main() -> Result<()> {
         }
         Action::Filter => unreachable!(),
         Action::CheckStaged { .. } => unreachable!(),
-        Action::PublicKey => unreachable!(),
+        Action::Workspace { .. } | Action::PublicKey => unreachable!(),
     }
 }

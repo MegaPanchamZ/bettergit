@@ -2,7 +2,7 @@
 set -eu
 
 for migration in schema phase2 phase3 guard-checkpoints team-identity \
-  team-identity-enforcement guard-deliveries delivery-reliability
+  team-identity-enforcement guard-deliveries delivery-reliability workspaces
 do
   psql -X --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     --file "/schema/$migration.sql"
