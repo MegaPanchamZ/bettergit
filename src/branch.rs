@@ -20,9 +20,7 @@ fn enrollment(server: &str, repo: Option<&str>) -> Result<Value> {
         .join("bettergit/enrollment.json");
     let value: Value = serde_json::from_slice(&std::fs::read(cache)?)?;
     ensure!(
-        value["server"]
-            .as_str()
-            .map(|s| s.trim_end_matches('/'))
+        value["server"].as_str().map(|s| s.trim_end_matches('/'))
             == Some(server.trim_end_matches('/'))
             && value["origin"].as_str() == Some(&git(&["remote", "get-url", "origin"])?),
         "local enrollment or origin mismatch"

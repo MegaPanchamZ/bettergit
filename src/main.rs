@@ -801,10 +801,8 @@ fn sync_repository(
                     "run pin-group with an independently verified group public key before first sync"
                 );
             }
-            let wrapped = crypto::encrypt(
-                key.to_string().expose_secret().as_bytes(),
-                &id.to_public(),
-            )?;
+            let wrapped =
+                crypto::encrypt(key.to_string().expose_secret().as_bytes(), &id.to_public())?;
             atomic_write(&group_path(base, name), &wrapped)?;
             Ok(())
         })();
