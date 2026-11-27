@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Join a private branch · Better Git</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/join/join.js" defer></script>
+</head>
+<body>
+  <header class="top"><a href="/">Better Git</a></header>
+  <main>
+    <h1>Join a private branch</h1>
+    <ol>
+      <li>Install Git and <a href="/install/">download Better Git for your operating system</a>.</li>
+      <li>Run <code>bettergit login</code> and sign in with the GitHub account your workspace administrator added.</li>
+      <li>Use your GitHub HTTPS credential manager. If you use GitHub CLI, run <code>gh auth login --git-protocol https</code> and <code>gh auth setup-git</code>.</li>
+      <li>Run this in an empty directory or in an existing clean checkout of the parent repository.</li>
+    </ol>
+    <p id="join-status" role="status">Open the full link shared by your workspace administrator.</p>
+    <pre id="join-command" hidden><code></code></pre>
+    <p id="join-help" hidden>Run the same command with <code>bettergit doctor</code> in place of <code>bettergit branch join</code> to check your account and Git read access.</p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: disposable-local-db
+      POSTGRES_DB: forgejo
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "bench", "-d", "forgejo"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:17.0.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: postgres:5432
+      FORGEJO__database__NAME: forgejo
+      FORGEJO__database__USER: bench
+      FORGEJO__database__PASSWD: disposable-local-db
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__server__OFFLINE_MODE: "true"
+      FORGEJO__repository__DISABLE_FORKS: "true"
+    ports: ["127.0.0.1::3000"]
+  control-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: disposable-local-db
+      POSTGRES_DB: bettergit
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "bench", "-d", "bettergit"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

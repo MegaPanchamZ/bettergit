@@ -29,8 +29,14 @@ let world = { ...legitimate };
 const written: string[] = [];
 const repository = { id: '1', github_repo_id: '500', org_name: 'acme', repo_name: 'repo', installation_id: '10' };
 const shadow = () => ({
-  id: '3', parent_repo_id: '1', github_repo_id: '600', repo_name: 'companion', branch_name: 'restricted',
+  id: '3', parent_repo_id: '1', workspace_id: '1', github_repo_id: null, repo_name: 'companion', branch_name: 'restricted',
   allowed_ids: world.shadowAllowed, status: 'ready',
+});
+const workspace = () => ({
+  id: '1', parent_repo_id: '1', github_repo_id: '600', repo_name: 'companion',
+  org_name: 'acme', parent_name: 'repo', installation_id: '10', parent_github_repo_id: '500',
+  allowed_ids: world.shadowAllowed, revoked_ids: [], status: 'ready', archive_requested: false,
+  checked_at: new Date(),
 });
 
 db.query = (async (sql: string) => {
@@ -39,6 +45,7 @@ db.query = (async (sql: string) => {
     return { rows: world.group ? [{ ...repository, id: '7', repo_id: '1', name: 'github-team:infra', github_team_id: world.teamId }] : [] };
   }
   if (sql.includes('FROM users')) return { rows: world.knownUser ? [{ github_id: '42', github_username: 'stale-login' }] : [] };
+  if (sql.includes('FROM workspaces w JOIN repos r')) return { rows: [workspace()] };
   if (sql.includes('FROM shadow_repos s JOIN repos')) {
     return { rows: [{ ...shadow(), org_name: 'acme', parent_name: 'repo', installation_id: '10', baseline_sha: 'a'.repeat(40), parent_github_repo_id: '500' }] };
   }
@@ -64,6 +71,9 @@ app.getInstallationOctokit = (async (installation: number) => {
     },
     paginate: async (method: unknown) => method === listTeams ? world.teams : world.collaborators,
     rest: {
+      git: {
+        getRef: async () => ({ data: { ref: 'refs/heads/restricted' } }),
+      },
       orgs: {
         get: async () => ({ data: { default_repository_permission: world.basePermission } }),
         checkMembershipForUser: async () => ({ status: 204 }),
@@ -75,7 +85,7 @@ app.getInstallationOctokit = (async (installation: number) => {
           assert.equal(owner, 'acme');
           if (repo === 'repo') return { data: { id: world.repositoryId, owner: { id: world.ownerId } } };
           assert.equal(repo, 'companion');
-          return { data: { id: world.shadowId, private: world.shadowPrivate, fork: false } };
+          return { data: { id: world.shadowId, private: world.shadowPrivate, fork: false, allow_forking: false } };
         },
         getCollaboratorPermissionLevel: async ({ owner, repo, username }: Record<string, string>) => {
           assert.deepEqual({ owner, repo, username }, { owner: 'acme', repo: 'repo', username: 'member' });

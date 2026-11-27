@@ -7,3 +7,4 @@
 /extension/dist
 
 /deploy/*.pem
+/.playwright-mcp/

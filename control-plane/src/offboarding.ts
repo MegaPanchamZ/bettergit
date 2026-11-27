@@ -40,6 +40,21 @@ export async function offboard(
       AND ($3::bigint IS NULL OR github_repo_id=$3) ORDER BY github_repo_id`,[org,installation??null,repository??null]);
     for(const parent of parents) await enqueue(githubId,parent.github_repo_id,team!==undefined);
    }
+   if(team!==undefined) {
+    const {rows:[meta]}=await client.query<{present:boolean}>("SELECT to_regclass('workspaces') IS NOT NULL AS present");
+    if(meta?.present) {
+     // Team removal or deletion must immediately trigger workspace reconciliation
+     // even when members retain parent read access or never fetched encryption keys.
+     await client.query(`UPDATE workspaces w SET status='pending',retry_after=now()
+      FROM groups g JOIN repos r ON r.id=g.repo_id
+      WHERE w.parent_repo_id=r.id AND w.status<>'archived'
+        AND r.org_name=$1 AND g.github_team_id=$2
+        AND ($3::bigint IS NULL OR r.installation_id=$3)
+        AND ($4::bigint IS NULL OR r.github_repo_id=$4)
+        AND w.group_ids @> jsonb_build_array(g.id::text)`,
+      [org,team,installation??null,repository??null]);
+    }
+   }
    for(const g of rows) {
     if(githubId===null) await enqueue(g.github_id,g.github_repo_id,true);
     await client.query('SELECT pg_advisory_xact_lock($1::int,$2::int)',[g.user_id,g.group_id]);
@@ -58,24 +73,23 @@ export async function offboard(
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 
 }
-// Claim across service replicas. A crashed worker leaves the job ready for retry.
+// Lease across service replicas without holding a DB connection across provider calls.
 export async function drainShadowRevocation() {
- const client=await db.connect();
+ const {rows:[job]}=await db.query(`UPDATE shadow_revocation_jobs SET retry_after=now()+interval '5 minutes'
+   WHERE id=(SELECT id FROM shadow_revocation_jobs
+     WHERE failed_at IS NULL AND retry_after<=now() ORDER BY retry_after,id LIMIT 1 FOR UPDATE SKIP LOCKED)
+   RETURNING *`);
+ if(!job) return;
  let failedId:string|undefined;
  try {
-  await client.query('BEGIN');
-  const {rows:[job]}=await client.query(`SELECT * FROM shadow_revocation_jobs
-    WHERE failed_at IS NULL AND retry_after<=now() ORDER BY retry_after,id LIMIT 1 FOR UPDATE SKIP LOCKED`);
-  if(job) {
-   try {
-    await revokeShadows(Number(job.github_id),job.org_name,Number(job.repository)||undefined,job.require_parent_access_loss);
-    await client.query('DELETE FROM shadow_revocation_jobs WHERE id=$1',[job.id]);
-   }catch {
-    if(await retryJob(client,'shadow_revocation_jobs',job)) failedId=job.id;
-   }
-  }
-  await client.query('COMMIT');
- }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
+  await revokeShadows(Number(job.github_id),job.org_name,Number(job.repository)||undefined,job.require_parent_access_loss);
+  await db.query('DELETE FROM shadow_revocation_jobs WHERE id=$1',[job.id]);
+ }catch {
+  const client=await db.connect();
+  try {
+   if(await retryJob(client,'shadow_revocation_jobs',job)) failedId=job.id;
+  }finally{client.release();}
+ }
  if(failedId) console.error('Shadow revocation exhausted retries',failedId);
 }
 
