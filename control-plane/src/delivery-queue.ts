@@ -12,8 +12,9 @@ export async function retryJob(
  client: PoolClient,
  table:'guard_deliveries'|'shadow_revocation_jobs',
  job:{id:string,attempts:number},
+ keepRetrying=false,
 ) {
- const failed=job.attempts+1>=maxAttempts;
+ const failed=!keepRetrying && job.attempts+1>=maxAttempts;
  await client.query(`UPDATE ${table} SET attempts=attempts+1,
    retry_after=now()+make_interval(secs=>least(3600,30*(2^least(attempts,7))::int)),
    failed_at=CASE WHEN $2::boolean THEN now() ELSE NULL END WHERE id=$1`,[job.id,failed]);
@@ -37,7 +38,7 @@ export async function drainDelivery(
     await dispatch(job);
     await client.query('UPDATE guard_deliveries SET completed_at=now(),payload=NULL WHERE id=$1',[job.id]);
    }catch {
-    if(await retryJob(client,'guard_deliveries',job)) failedId=job.id;
+    if(await retryJob(client,'guard_deliveries',job,!offboarding)) failedId=job.id;
    }
   }
   await client.query('COMMIT');

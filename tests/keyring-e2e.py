@@ -7,11 +7,16 @@ def run(args,root,**kw):
 with tempfile.TemporaryDirectory(prefix='bettergit-e2e-') as d:
  root=pathlib.Path(d)/'source';root.mkdir()
  run(['git','init','-q'],root)
+ run(['git','config','commit.gpgsign','false'],root)
  run(['git','config','user.name','Test'],root);run(['git','config','user.email','test@example.test'],root)
  (root/'.access.yml').write_text('version: 1\norg: test\nrules:\n  - path: .env\n    mode: value\n    allow: [github-team:infra]\n    stub: .env.example\n')
  (root/'.env.example').write_text('TOKEN=mock\n')
  run(['git','add','.access.yml','.env.example'],root);run(['git','commit','-qm','policy and public stub'],root)
  run([binary,'init'],root)
+ info=root/'.git/info/attributes'
+ info.write_text(info.read_text()+'custom -diff\n')
+ run([binary,'init'],root)
+ assert 'custom -diff' in info.read_text()
  signer=run([binary,'group-signing-key','github-team:infra'],root).decode().strip()
  policy=(root/'.access.yml').read_text()
  (root/'.access.yml').write_text(policy+f'    signing_key: {signer}\n')
@@ -33,6 +38,18 @@ with tempfile.TemporaryDirectory(prefix='bettergit-e2e-') as d:
  clone=pathlib.Path(d)/'clone';run(['git','clone','-q',str(root),str(clone)],root)
  assert b'ENC[v2:' in (clone/'.env').read_bytes()
  run([binary,'init'],clone)
+ assert (clone/'.env').read_text()=='TOKEN=mock\n'
+ status=run(['git','status','--porcelain'],clone)
+ assert not status, repr(status)
+ clone_policy=(clone/'.access.yml').read_text()
+ (clone/'.access.yml').write_text(clone_policy.replace('    stub: .env.example\n',''))
+ for name in ['.env','app/.env']:
+  (clone/name).write_bytes(run(['git','show',':'+name],clone))
+ run([binary,'init'],clone)
+ assert b'ENC[v2:' in (clone/'.env').read_bytes()
+ assert not run(['git','status','--porcelain','--','.env','app/.env'],clone)
+ (clone/'.access.yml').write_text(clone_policy)
+ run([binary,'init'],clone)
  run(['git','checkout-index','-f','--all'],clone)
  assert (clone/'.env').read_text()=='TOKEN=mock\n', repr((clone/'.env').read_text())
  run(['git','add','.env'],clone)
@@ -51,6 +68,15 @@ with tempfile.TemporaryDirectory(prefix='bettergit-e2e-') as d:
  assert unpinned.returncode!=0 and b'run pin-group' in unpinned.stderr
  run([binary,'pin-group','github-team:infra',fingerprint],clone)
  run([binary,'import','github-team:infra',str(envelope)],clone)
+ (clone/'.env').write_text('TOKEN=mock\n')
+ run([binary,'init'],clone)
+ assert (clone/'.env').read_text()=='TOKEN=mock\n'
+ run(['git','checkout-index','-f','--','.env'],clone)
+ assert (clone/'.env').read_text()=='TOKEN=secret\n'
+ # A key holder can intentionally change a value to the public stub value.
+ (root/'.env').write_text('TOKEN=mock\n')
+ run(['git','add','.env'],root)
+ assert run(['git','rev-parse',':.env'],root)!=before
  attacker=pathlib.Path(d)/'other';attacker.mkdir()
  run(['git','init','-q'],attacker);run(['git','remote','add','origin',origin],attacker)
  (attacker/'.access.yml').write_text(policy)

@@ -1,6 +1,6 @@
 [package]
 name = "bettergit"
-version = "0.1.1-pilot.2"
+version = "0.1.1-pilot.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Git-native granular encryption and restricted collaboration"

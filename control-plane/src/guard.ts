@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { app,db } from './service.js';
 import {drainDelivery,persistDelivery} from './delivery-queue.js';
+class VerificationUnavailable extends Error {}
+async function database<T>(operation:Promise<T>):Promise<T> {
+ try {return await operation;} catch {throw new VerificationUnavailable('verification database unavailable');}
+}
 // Validate blobs with the same parser as the local filter, without loading keys.
 async function validate(policy:string,path:string,bytes:Buffer) {
   const dir=await mkdtemp(join(tmpdir(),'bettergit-guard-'));
@@ -19,38 +23,53 @@ async function checkDelivery(p:any) {
   if(!p.installation || p.deleted || (p.pull_request && p.action==='closed') || (p.merge_group && p.action==='destroyed')) return;
   const gh=await app.getInstallationOctokit(p.installation.id);
   const owner=p.repository.owner.login ?? p.repository.owner.name, repo=p.repository.name;
+  const name=p.pull_request || p.merge_group?'Better Git merge encryption guard':'Better Git commit encryption guard';
   let target=p.merge_group?.head_sha ?? p.after;
   let base=p.merge_group?.base_sha ?? p.before;
   let pullHead:string|undefined;
   let pullBaseRef:string|undefined;
+  async function reportStaleCandidate(head:string,candidate:string|undefined,currentBase:string) {
+    const external_id=`stale-pr:${p.pull_request.number}:${currentBase}`;
+    const output={title:'Merge needs rechecking',summary:'The base branch changed. The guard will retry when GitHub generates a current test merge. Updating the pull request branch can also trigger a new check.'};
+    for(const ref of new Set([head,...(candidate?[candidate]:[])])) {
+      const {data}=await gh.rest.checks.listForRef({owner,repo,ref,check_name:name,app_id:Number(process.env.GITHUB_APP_ID),filter:'latest',per_page:1});
+      if(data.check_runs[0]?.external_id===external_id) continue;
+      await gh.rest.checks.create({owner,repo,name,head_sha:ref,external_id,status:'completed',conclusion:'action_required',output});
+    }
+  }
   if(p.pull_request) {
     const {data:pr}=await gh.rest.pulls.get({owner,repo,pull_number:p.pull_request.number});
     if(pr.state==='closed' || (p.pull_request.head && pr.head.sha!==p.pull_request.head.sha)) return;
     if(pr.mergeable===false) return;
-    if(pr.mergeable!==true || !pr.merge_commit_sha) throw new Error('merge candidate is not ready');
     // GitHub can retain the old base SHA in the PR response after the target branch moves.
     pullBaseRef=`heads/${pr.base.ref}`;
     const {data:baseRef}=await gh.rest.git.getRef({owner,repo,ref:pullBaseRef});
     base=baseRef.object.sha;
+    if(pr.mergeable!==true || !pr.merge_commit_sha) {
+      if(pr.base.sha!==base) await reportStaleCandidate(pr.head.sha,pr.merge_commit_sha??undefined,base);
+      throw new Error('merge candidate is not ready');
+    }
     const {data:merge}=await gh.rest.repos.getCommit({owner,repo,ref:pr.merge_commit_sha});
     if(merge.parents.length!==2 || merge.parents[0]?.sha!==base || merge.parents[1]?.sha!==pr.head.sha) {
+      await reportStaleCandidate(pr.head.sha,pr.merge_commit_sha,base);
       throw new Error('merge candidate does not match current parents');
     }
     target=pr.merge_commit_sha;
     pullHead=pr.head.sha;
   }
   if(!target) return;
-  const name=p.pull_request || p.merge_group?'Better Git merge encryption guard':'Better Git commit encryption guard';
   const check=await gh.rest.checks.create({owner,repo,name,head_sha:target,status:'in_progress'});
   let valid=false;
+  let enrolled=true;
   try {
-    const {rows}=await db.query('SELECT approved_policy,baseline_sha FROM repos WHERE github_repo_id=$1',[p.repository.id]);
-    if(!rows[0]) throw new Error('repository not enrolled');
+    const {rows}=await database(db.query('SELECT approved_policy,baseline_sha FROM repos WHERE github_repo_id=$1',[p.repository.id]));
+    enrolled=!!rows[0];
+    if(!enrolled) throw new Error('repository not enrolled');
     const trusted=Buffer.from(rows[0].approved_policy);
     const policy=parse(trusted.toString());
     if(policy.version!==1 || !Array.isArray(policy.rules)) throw new Error('invalid policy');
     const digest=createHash('sha256').update(trusted).digest('hex');
-    const verified=await db.query('SELECT 1 FROM guard_verified_commits WHERE github_repo_id=$1 AND commit_sha=$2 AND policy_digest=$3',[p.repository.id,base,digest]);
+    const verified=await database(db.query('SELECT 1 FROM guard_verified_commits WHERE github_repo_id=$1 AND commit_sha=$2 AND policy_digest=$3',[p.repository.id,base,digest]));
     const start=verified.rowCount ? base : rows[0].baseline_sha;
     // Comparing all the way to a merge covers both parents' ancestry.
     const covered=new Set<string>();let total:number|undefined;
@@ -82,29 +101,44 @@ async function checkDelivery(p:any) {
         await validate(trusted.toString(),item.path,await blob(item.sha));
       }
     }
-    await db.query('INSERT INTO guard_verified_commits(github_repo_id,commit_sha,policy_digest) SELECT $1,unnest($2::text[]),$3 ON CONFLICT DO NOTHING',[p.repository.id,commits,digest]);
+    await database(db.query('INSERT INTO guard_verified_commits(github_repo_id,commit_sha,policy_digest) SELECT $1,unnest($2::text[]),$3 ON CONFLICT DO NOTHING',[p.repository.id,commits,digest]));
     valid=true;
   } catch(error) {
     // Retry rate limits, permission changes and provider server errors.
     const status=(error as {status?:number}).status;
-    if(status===403 || status===429 || (status!==undefined && status>=500)) throw error;
+    const transient=error instanceof VerificationUnavailable || status===403 || status===429 || (status!==undefined && status>=500)
+      || (error as {code?:string}).code!==undefined
+      || (error instanceof TypeError);
+    if(transient) {
+      await gh.rest.checks.update({owner,repo,check_run_id:check.data.id,status:'completed',conclusion:'failure',
+        output:{title:'Verification temporarily unavailable',summary:'The guard will retry automatically. Encryption has not been verified.'}});
+      throw error;
+    }
   }
   const verdict={
-    owner,repo,status:'completed' as const,conclusion:valid?'success' as const:'failure' as const,
-    ...(!valid && {output:{title:'Protected content could not be verified',summary:'Encryption validation failed. Check policy, protected blobs, and guard configuration. Do not post secret contents in logs.'}}),
+    owner,repo,status:'completed' as const,conclusion:valid?'success' as const:enrolled?'failure' as const:'action_required' as const,
+    ...(!valid && {output:enrolled
+      ? {title:'Protected content could not be verified',summary:'Encryption validation failed. Check policy, protected blobs, and guard configuration. Do not post secret contents in logs.'}
+      : {title:'Repository enrollment required',summary:'Ask a repository administrator to enroll this repository and approve its policy in the Better Git dashboard. Encryption has not been verified.'}}),
   };
-  await gh.rest.checks.update({...verdict,check_run_id:check.data.id});
   if(pullHead && pullBaseRef) {
     // GitHub can require the check on the PR head as well as the test merge.
     const {data:current}=await gh.rest.pulls.get({owner,repo,pull_number:p.pull_request.number});
-    if(current.state==='closed' || current.head.sha!==pullHead) return;
+    if(current.state==='closed' || current.head.sha!==pullHead) {
+      await gh.rest.checks.update({...verdict,check_run_id:check.data.id});
+      return;
+    }
     const {data:currentBase}=await gh.rest.git.getRef({owner,repo,ref:pullBaseRef});
     if(current.mergeable!==true || `heads/${current.base.ref}`!==pullBaseRef ||
       currentBase.object.sha!==base || current.merge_commit_sha!==target) {
+      await gh.rest.checks.update({owner,repo,check_run_id:check.data.id,status:'completed',conclusion:'action_required',
+        output:{title:'Merge needs rechecking',summary:'The pull request changed during verification. The guard will retry against the current test merge.'}});
+      await reportStaleCandidate(pullHead,target,currentBase.object.sha);
       throw new Error('merge candidate changed before reporting on PR head');
     }
-    await gh.rest.checks.create({...verdict,name,head_sha:pullHead});
   }
+  await gh.rest.checks.update({...verdict,check_run_id:check.data.id});
+  if(pullHead) await gh.rest.checks.create({...verdict,name,head_sha:pullHead});
 }
 
 app.webhooks.on(['push','pull_request','merge_group'],async ({id,payload})=>{

@@ -465,7 +465,15 @@ fn init(root: &Path, policy: &Policy, base: &Path, write_attributes: bool) -> Re
         std::fs::create_dir_all(parent)?;
     }
     let old = std::fs::read_to_string(&info).unwrap_or_default();
-    let before = old.split_once(start).map(|(s, _)| s).unwrap_or(&old);
+    let preserved = if let Some((before, rest)) = old.split_once(start) {
+        let (_, after) = rest
+            .split_once(end)
+            .context("invalid managed attributes block")?;
+        format!("{before}{after}")
+    } else {
+        old
+    };
+    let before = preserved.as_str();
     let block = text
         .split_once(start)
         .context("missing generated attributes")?
@@ -485,7 +493,12 @@ fn init(root: &Path, policy: &Policy, base: &Path, write_attributes: bool) -> Re
         let Ok(metadata) = std::fs::symlink_metadata(&file) else {
             continue;
         };
-        if !metadata.file_type().is_file() || std::fs::read(&file)? != old {
+        if !metadata.file_type().is_file() {
+            continue;
+        }
+        // A stub may also be an intentional edit by a key holder. Only indexed
+        // ciphertext is safe to replace automatically; restoring a stub is explicit.
+        if std::fs::read(&file)? != old {
             continue;
         }
         let rule = policy.rule(path)?.context("missing rule")?;
@@ -505,9 +518,25 @@ fn init(root: &Path, policy: &Policy, base: &Path, write_attributes: bool) -> Re
         {
             continue;
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let index_entry = git(&["ls-files", "--stage", "--", path])?;
+            let executable = metadata.permissions().mode() & 0o100 != 0;
+            if executable != index_entry.starts_with("100755 ") {
+                continue;
+            }
+        }
         let output = filter.transform("smudge", path, &old)?;
-        atomic_write(&file, &output)?;
-        std::fs::set_permissions(&file, metadata.permissions())?;
+        if output.as_slice() != old {
+            atomic_write(&file, &output)?;
+        }
+        // Let Git record the checked-out representation in its stat cache.
+        // This updates index metadata without staging a new blob.
+        git(&["checkout-index", "--force", "--index", "--", path])?;
+        if std::fs::metadata(&file)?.permissions() != metadata.permissions() {
+            std::fs::set_permissions(&file, metadata.permissions())?;
+        }
     }
     println!("Better Git initialized. Public key: {}", id.to_public());
     Ok(())
@@ -585,6 +614,9 @@ impl FilterState {
                 return engine::smudge_at(path, data, mode, key);
             }
             engine::validate_at(path, data, mode, Some(&signer))?;
+            if rule.stub.is_none() {
+                return Ok(Zeroizing::new(data.to_vec()));
+            }
             return rule
                 .stub
                 .as_ref()
@@ -599,7 +631,8 @@ impl FilterState {
             engine::validate_at(path, old, mode, Some(&signer))?;
             return Ok(Zeroizing::new(old.clone()));
         }
-        if let Some(safe) = rule.stub.as_ref().and_then(|p| self.stubs.get(p))
+        if key.is_none()
+            && let Some(safe) = rule.stub.as_ref().and_then(|p| self.stubs.get(p))
             && safe.as_slice() == data
         {
             let old = old.context("cannot stage stub without encrypted self.index blob")?;

@@ -173,7 +173,7 @@ A private workspace is one GitHub companion repository with one audience. Multip
 
 ### Join from a workspace link
 
-Install the Better Git CLI from the [pilot release](https://github.com/MegaPanchamZ/bettergit/releases/tag/v0.1.1-pilot.2). Configure a GitHub HTTPS credential manager, or run `gh auth login --git-protocol https` and `gh auth setup-git` if you already use GitHub CLI. Git credentials and the Better Git device login each need access as your GitHub account.
+Install the Better Git CLI from the [pilot release](https://github.com/MegaPanchamZ/bettergit/releases/tag/v0.1.1-pilot.3). Configure a GitHub HTTPS credential manager, or run `gh auth login --git-protocol https` and `gh auth setup-git` if you already use GitHub CLI. Git credentials and the Better Git device login each need access as your GitHub account.
 
 ```sh
 bettergit login
