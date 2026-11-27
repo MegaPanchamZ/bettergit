@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="See Better Git encrypt a dummy config value locally, then try its hosted merge check on a test repository.">
-  <title>Try Better Git on a test repo</title>
+  <meta name="description" content="Encrypt a test value in a local Git repo. Then, if you want, try Better Git’s pull request check on GitHub.">
+  <title>Try Better Git</title>
   <link rel="canonical" href="https://bettergit.app/try/">
   <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -16,12 +16,13 @@
 <body class="walkthrough">
   <main class="page docs">
     <a href="/">Better Git</a>
-    <h1>Try Better Git on a test repo</h1>
-    <p>See a dummy config value stay readable on your machine and turn into ciphertext in Git. The local demo needs no GitHub account.</p>
+    <h1>Try Better Git</h1>
+    <p>See how Better Git encrypts a test value when you run <code>git add</code>. The file on your machine stays readable. You can try this without a GitHub account.</p>
     <a class="download" href="/install/">Install the CLI</a>
 
-    <h2>Encrypt a value locally</h2>
-    <p>With Git, Better Git, and your OS keychain available, run this in a macOS or Linux terminal, or Git Bash on Windows. It creates a new <code>bettergit-demo</code> directory.</p>
+    <h2>Run the local demo</h2>
+    <p>You’ll need Git, Better Git, and a working system keychain. Use Terminal on macOS or Linux, or Git Bash on Windows.</p>
+    <p>Copy and run these commands. They create a new <code>bettergit-demo</code> folder and stage a file with a sample value.</p>
     <section class="install" aria-labelledby="install-title">
       <div class="bar"><span id="install-title">Local demo commands</span><button type="button" id="copy-install" hidden>Copy</button></div>
       <pre class="demo-commands" tabindex="0" aria-label="Local demo commands"><code id="install-command">(
@@ -48,17 +49,24 @@ git show :.env.demo
 )</code></pre>
       <p id="copy-status" class="visually-hidden" role="status"></p>
     </section>
-    <p>The check should report one verified file and no issues. The last line starts with <code>DEMO_TOKEN=ENC[v2:</code>. Open <code>bettergit-demo/.env.demo</code> locally to see the original value.</p>
 
-    <h2>Try the hosted merge check</h2>
-    <p>Use a separate disposable GitHub organization repo and test values. Have a GitHub organization owner install the App on that repo. An administrator can follow hosted setup to commit its policy, enroll it from the dashboard, and confirm that <strong>Better Git merge encryption guard</strong> passes on a test pull request.</p>
-    <nav class="demo-links" aria-label="Hosted setup">
-      <a href="https://github.com/apps/better-git-app/installations/new">Install the GitHub App</a>
-      <a href="https://github.com/MegaPanchamZ/bettergit#hosted-better-git">Hosted setup guide</a>
-      <a href="/dashboard/">Open dashboard</a>
-    </nav>
-    <p>GitHub requires a plan that supports branch protection on private repos if you want to make the check mandatory. <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches">GitHub branch protection</a></p>
-    <p class="note">Hosted Better Git is in public pilot. Use test secrets. <a href="/support/">Get help</a></p>
+    <h2>What you should see</h2>
+    <ul>
+      <li><strong>Check result.</strong> <code>{"version":1,"checked":1,"issues":[]}</code> means one file passed.</li>
+      <li><strong>In Git.</strong> The staged line starts with <code>DEMO_TOKEN=ENC[v2:</code>. The value is encrypted.</li>
+      <li><strong>On your machine.</strong> Open <code>bettergit-demo/.env.demo</code>. It still says <code>DEMO_TOKEN=sample-only</code>.</li>
+    </ul>
+
+    <h2>Try the GitHub check <small>(optional)</small></h2>
+    <p>The GitHub App checks pull requests for encrypted files. Use a disposable repo in a GitHub organization and stick to test values while Better Git is in public pilot.</p>
+    <ol>
+      <li>Ask an organization owner to <a href="https://github.com/apps/better-git-app/installations/new">install the GitHub App</a> on that repo.</li>
+      <li>As a repo admin, follow the <a href="https://github.com/MegaPanchamZ/bettergit#hosted-better-git">hosted setup guide</a> to commit the policy.</li>
+      <li>Enroll the repo in the <a href="/dashboard/">Better Git dashboard</a>.</li>
+      <li>Open a test pull request. Look for a passing <strong>Better Git merge encryption guard</strong> check.</li>
+    </ol>
+    <p>To make the check required on a private repo, your GitHub plan must support <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches">branch protection</a>.</p>
+    <p class="note"><a href="/support/">Get help</a></p>
   </main>
 </body>
 </html>
