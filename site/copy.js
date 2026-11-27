@@ -11,7 +11,7 @@ if (navigator.clipboard) {
     try {
       await navigator.clipboard.writeText(installCommand.textContent);
       copyButton.textContent = "Copied";
-      copyStatus.textContent = "Install commands copied.";
+      copyStatus.textContent = "Commands copied.";
     } catch {
       const selection = window.getSelection();
       const range = document.createRange();

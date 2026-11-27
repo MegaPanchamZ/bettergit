@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="See Better Git encrypt a dummy config value locally, then try its hosted merge check on a test repository.">
+  <title>Try Better Git on a test repo</title>
+  <link rel="canonical" href="https://bettergit.app/try/">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/docs.css">
+  <script src="/copy.js" defer></script>
+</head>
+<body>
+  <main class="page docs">
+    <a href="/">Better Git</a>
+    <h1>Try Better Git on a test repo</h1>
+    <p>See a dummy config value stay readable on your machine and turn into ciphertext in Git. The local demo needs no GitHub account.</p>
+    <a class="download" href="/install/">Install the CLI</a>
+
+    <h2>Encrypt a value locally</h2>
+    <p>With Git, Better Git, and your OS keychain available, run this in a macOS or Linux terminal, or Git Bash on Windows. It creates a new <code>bettergit-demo</code> directory.</p>
+    <section class="install" aria-labelledby="install-title">
+      <div class="bar"><span id="install-title">Local demo commands</span><button type="button" id="copy-install" hidden>Copy</button></div>
+      <pre class="demo-commands" tabindex="0" aria-label="Local demo commands"><code id="install-command">(
+set -e
+mkdir bettergit-demo
+cd bettergit-demo
+git init -b main
+cat &gt; .access.yml &lt;&lt;'YAML'
+version: 1
+org: demo
+rules:
+  - path: .env.demo
+    mode: value
+    allow: [github-team:infra]
+YAML
+printf '%s\n' 'DEMO_TOKEN=sample-only' &gt; .env.demo
+bettergit init
+signing_key=$(bettergit group-signing-key github-team:infra)
+printf '    signing_key: %s\n' "$signing_key" &gt;&gt; .access.yml
+bettergit init
+git add -- .access.yml .gitattributes .env.demo
+bettergit check-staged --json
+git show :.env.demo
+)</code></pre>
+      <p id="copy-status" class="visually-hidden" role="status"></p>
+    </section>
+    <p>The check should report one verified file and no issues. The last line starts with <code>DEMO_TOKEN=ENC[v2:</code>. Open <code>bettergit-demo/.env.demo</code> locally to see the original value.</p>
+
+    <h2>Try the hosted merge check</h2>
+    <p>Use a separate disposable GitHub organization repo and test values. Have a GitHub organization owner install the App on that repo. An administrator can follow hosted setup to commit its policy, enroll it from the dashboard, and confirm that <strong>Better Git merge encryption guard</strong> passes on a test pull request.</p>
+    <nav class="demo-links" aria-label="Hosted setup">
+      <a href="https://github.com/apps/better-git-app/installations/new">Install the GitHub App</a>
+      <a href="https://github.com/MegaPanchamZ/bettergit#hosted-better-git">Hosted setup guide</a>
+      <a href="/dashboard/">Open dashboard</a>
+    </nav>
+    <p>GitHub requires a plan that supports branch protection on private repos if you want to make the check mandatory. <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches">GitHub branch protection</a></p>
+    <p class="note">Hosted Better Git is in public pilot. Use test secrets. <a href="/support/">Get help</a></p>
+  </main>
+</body>
+</html>

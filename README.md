@@ -8,6 +8,8 @@ Git-native granular encryption for repositories hosted on GitHub. The open-sourc
 
 ## Install and use
 
+[Try Better Git on a test repo](https://bettergit.app/try/) to see a dummy value encrypted in the Git index.
+
 Use the CLI by itself for local Git encryption. For GitHub team-based key distribution and merge checks, use [hosted Better Git](#hosted-better-git) or run your own [control plane with Docker Compose](deploy/README.md) and register your own GitHub App.
 
 [Download the CLI](https://bettergit.app/install/) for macOS, Linux, or Windows. To build the CLI from source, install Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`, and use a desktop session with a running, unlocked Secret Service keyring such as GNOME Keyring. macOS uses Keychain and Windows uses Credential Manager.

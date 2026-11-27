@@ -4,3 +4,6 @@
 .docs p { margin: .55rem 0 .9rem; }
 .docs > a:first-child { color: var(--subtle); font-size: .875rem; }
 .docs .note { margin-top: 1.25rem; }
+
+.docs .demo-commands { white-space: pre; overflow-x: auto; }
+.docs .demo-links { justify-content: flex-start; margin-bottom: .9rem; }
