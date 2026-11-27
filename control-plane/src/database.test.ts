@@ -70,27 +70,36 @@ test('migrations, offboarding, replay deduplication, and immutable CI policies',
   assert.deepEqual((await db.query('SELECT repository FROM shadow_revocation_jobs')).rows,[{repository:'1'}]);
   await db.query(`INSERT INTO shadow_repos(parent_repo_id,github_repo_id,repo_name,branch_name,creator_id,allowed_users,allowed_ids,status)
     VALUES(1,2,'companion','restricted',1,'["removed","other"]','[42,43]','ready')`);
+  await db.query(await readFile(new URL('../workspaces.sql',import.meta.url),'utf8'));
   let unavailable=true;
   const listCollaborators=()=>{};
   const listInvitations=()=>{};
+  const listTeams=()=>{};
   const originalInstallation=app.getInstallationOctokit;
   app.getInstallationOctokit=(async ()=>{
    if(unavailable) throw new Error('synthetic provider interruption');
-   return {rest:{repos:{listCollaborators,listInvitations}},paginate:async(method:unknown)=>{
-    assert([listCollaborators,listInvitations].includes(method as typeof listCollaborators));
-    return [];
-   }};
+   return {
+    request:async(_route:string,{account_id}:{account_id:number})=>({data:{id:account_id,login:account_id===42?'removed':'other'}}),
+    rest:{orgs:{get:async()=>({data:{default_repository_permission:'none'}}),checkMembershipForUser:async()=>{}},
+     repos:{listCollaborators,listInvitations,listTeams,get:async({repo}:{repo:string})=>({data:repo==='repo'?{id:1,owner:{id:70}}:{id:2,private:true,fork:false,allow_forking:false}}),
+      getCollaboratorPermissionLevel:async({repo,username}:{repo:string;username:string})=>({data:{permission:repo==='companion'&&username==='removed'?'none':'read',user:{id:username==='removed'?42:43}}}),update:async()=>{},addCollaborator:async()=>{}}},
+    paginate:async(method:unknown)=>{
+     assert([listCollaborators,listInvitations,listTeams].includes(method as typeof listCollaborators));
+     return method===listCollaborators?[{id:43,login:'other',permissions:{push:true}}]:[];
+    }};
+
   }) as unknown as typeof app.getInstallationOctokit;
   try {
    await drainShadowRevocation();
    const {rows:[pending]}=await db.query('SELECT attempts,retry_after FROM shadow_revocation_jobs');
    assert.equal(pending.attempts,1);
    assert(pending.retry_after.getTime()>Date.now());
+   // A provider outage must preserve the retry job and desired membership.
+   assert.deepEqual((await db.query('SELECT allowed_ids FROM workspaces')).rows[0].allowed_ids,[42,43]);
    unavailable=false;
-   await db.query("UPDATE shadow_revocation_jobs SET retry_after=now()");
+   await db.query('UPDATE shadow_revocation_jobs SET retry_after=now()');
    await drainShadowRevocation();
-   const {rows:[remaining]}=await db.query('SELECT allowed_ids,allowed_users FROM shadow_repos');
-   assert.deepEqual(remaining,{allowed_ids:[43],allowed_users:['other']});
+   assert.deepEqual((await db.query('SELECT allowed_ids,allowed_users FROM shadow_repos')).rows[0],{allowed_ids:[43],allowed_users:['other']});
   } finally { app.getInstallationOctokit=originalInstallation; }
   assert.equal((await db.query('SELECT * FROM shadow_revocation_jobs')).rowCount,0);
   assert.equal((await db.query('SELECT * FROM wrapped_deks')).rowCount,0);

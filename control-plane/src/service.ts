@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { App, Octokit } from 'octokit';
 import { z } from 'zod';
-export const db = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.PG_POOL_MAX ?? 25) });
 export const app = new App({ appId: process.env.GITHUB_APP_ID!, privateKey: process.env.GITHUB_PRIVATE_KEY!, webhooks: { secret: process.env.GITHUB_WEBHOOK_SECRET! } });
 export async function user(token: string) {
   const clientId = process.env.GITHUB_CLIENT_ID;

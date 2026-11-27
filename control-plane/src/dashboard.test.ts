@@ -37,6 +37,8 @@ test('dashboard and agent inventory share current GitHub access', { skip: !proce
     const address = server.address();
     assert(address && typeof address !== 'string');
     await db.query(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
+    for(const name of ['phase2','phase3','guard-checkpoints','team-identity','team-identity-enforcement','guard-deliveries','delivery-reliability','workspaces']) await db.query(await readFile(new URL('../'+name+'.sql',import.meta.url),'utf8'));
+    let workspaceAdmin=true;
     const { signer } = JSON.parse(await readFile(new URL('../../tests/signed-browser-fixture.json', import.meta.url), 'utf8'));
     const policy = `version: 1\norg: acme\nrules:\n  - path: config.env\n    mode: value\n    allow: [github-team:infra]\n    signing_key: ${signer}\n`;
     let head = 'b'.repeat(40);
@@ -45,7 +47,8 @@ test('dashboard and agent inventory share current GitHub access', { skip: !proce
     app.octokit.rest.apps.getRepoInstallation = (async () => ({ data: { id: 10 } })) as unknown as typeof app.octokit.rest.apps.getRepoInstallation;
     app.getInstallationOctokit = (async () => ({
       rest: { repos: {
-        get: async () => ({ data: { id: installedId } }),
+        get: async ({ repo: repoName }: { repo: string }) => ({ data: { id: repoName === 'stored-1' ? 1 : installedId, owner: { id: 70 } } }),
+        getCollaboratorPermissionLevel: async () => ({data:{permission:workspaceAdmin?'admin':'read',user:{id:99}}}),
         getCommit: async () => ({ data: { sha: head } }),
         getContent: async () => ({ data: content }),
       } },
@@ -121,6 +124,14 @@ test('dashboard and agent inventory share current GitHub access', { skip: !proce
       headers: { 'X-BetterGit-Dashboard': '1', Cookie: activeCookie },
       body: JSON.stringify(body),
     });
+
+    assert.equal((await request('dashboard/workspaces',{method:'POST',body:'{}'})).status,403);
+    assert.equal((await request('dashboard/workspaces',{method:'POST',headers:{'X-BetterGit-Dashboard':'1'},body:'{}'})).status,401);
+    const workspaceList=await action('workspaces',{operation:'list',id:'1'});
+    assert.equal(workspaceList.status,200);assert.deepEqual(await workspaceList.json(),[]);
+    workspaceAdmin=false;
+    assert.equal((await action('workspaces',{operation:'list',id:'1'})).status,403);
+    workspaceAdmin=true;
 
     const authorization = { Authorization: 'Bearer ghu_synthetic' };
     const result = await request('inventory', { headers: authorization });

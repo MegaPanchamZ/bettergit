@@ -20,7 +20,8 @@ fn enrollment(server: &str, repo: Option<&str>) -> Result<Value> {
         .join("bettergit/enrollment.json");
     let value: Value = serde_json::from_slice(&std::fs::read(cache)?)?;
     ensure!(
-        value["server"].as_str() == Some(server)
+        value["server"].as_str().map(|s| s.trim_end_matches('/'))
+            == Some(server.trim_end_matches('/'))
             && value["origin"].as_str() == Some(&git(&["remote", "get-url", "origin"])?),
         "local enrollment or origin mismatch"
     );
@@ -32,7 +33,108 @@ fn enrollment(server: &str, repo: Option<&str>) -> Result<Value> {
     }
     Ok(value)
 }
-pub fn create(server: &str, repo: &str, name: &str, allow: &str) -> Result<()> {
+/// Accept only canonical GitHub repository paths before constructing Git URLs.
+pub fn github_origin(origin: &str) -> Result<(&str, bool)> {
+    let (path, https) = if let Some(path) = origin.strip_prefix("https://github.com/") {
+        (path, true)
+    } else {
+        (
+            origin
+                .strip_prefix("git@github.com:")
+                .context("origin must be a GitHub HTTPS or git@github.com SSH URL")?,
+            false,
+        )
+    };
+    let slug = path.strip_suffix(".git").unwrap_or(path);
+    let (owner, repo) = slug
+        .split_once('/')
+        .context("invalid GitHub repository path")?;
+    let valid = |part: &str| {
+        !matches!(part, "" | "." | "..")
+            && part
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
+    };
+    ensure!(
+        valid(owner) && valid(repo),
+        "invalid GitHub repository path"
+    );
+    Ok((slug, https))
+}
+fn companion_remote(server: &str, origin: &str, value: &Value) -> Result<String> {
+    let remote = value["remote"]
+        .as_str()
+        .context("missing companion remote")?;
+    let (parent, https) = github_origin(origin)?;
+    let (slug, remote_https) = github_origin(remote)?;
+    let (owner, name) = slug.split_once('/').context("invalid companion remote")?;
+    ensure!(
+        !remote_https
+            && remote.ends_with(".git")
+            && owner.eq_ignore_ascii_case(parent.split('/').next().unwrap_or_default())
+            && name
+                .strip_prefix("bettergit-")
+                .is_some_and(|suffix| !suffix.is_empty()),
+        "untrusted companion remote"
+    );
+    let info = crate::client::github_repo(server, slug)?;
+    ensure!(
+        info["private"] == true && info["fork"] == false,
+        "GitHub must confirm the companion is private and has no fork parent"
+    );
+    Ok(if https {
+        format!("https://github.com/{slug}.git")
+    } else {
+        remote.to_owned()
+    })
+}
+pub fn join_target(server: &str, target: &str) -> Result<(String, bool)> {
+    crate::client::server(server)?;
+    let prefix = format!("{}/join/#", server.trim_end_matches('/'));
+    let link = target.strip_prefix(&prefix);
+    let id = link.unwrap_or(target);
+    ensure!(
+        !id.is_empty() && id.len() <= 19 && id.bytes().all(|c| c.is_ascii_digit()),
+        "provide a branch ID or a join link from your Better Git server"
+    );
+    Ok((id.to_owned(), link.is_some()))
+}
+pub fn join_info(server: &str, id: &str) -> Result<Value> {
+    crate::client::request(
+        "GET",
+        &format!("{}/v1/shadows/{id}", server.trim_end_matches('/')),
+        None,
+    ).context("could not resolve branch access; confirm the signed-in account, parent read access, workspace membership and branch readiness")
+}
+pub fn remote_check(server: &str, origin: &str, value: &Value) -> Result<()> {
+    verify_git_read(origin, "HEAD").context("parent Git transport failed")?;
+    let remote = companion_remote(server, origin, value)?;
+    let name = value["branch"].as_str().context("missing branch")?;
+    ensure!(valid(name), "invalid shadow branch");
+    verify_git_read(&remote, &format!("refs/heads/{name}"))
+        .context("companion Git transport or restricted branch check failed")
+}
+fn verify_git_read(remote: &str, reference: &str) -> Result<()> {
+    let status = Command::new("git")
+        .args(["ls-remote", "--exit-code", "--", remote, reference])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    ensure!(
+        status.success(),
+        "verify Git credentials for GitHub and confirm the branch was pushed"
+    );
+    Ok(())
+}
+pub fn create(
+    server: &str,
+    repo: &str,
+    name: &str,
+    allow: Option<&str>,
+    workspace: Option<&str>,
+) -> Result<()> {
     ensure!(
         valid(name) && repo.bytes().all(|c| c.is_ascii_digit()),
         "invalid branch or repo ID"
@@ -59,48 +161,36 @@ pub fn create(server: &str, repo: &str, name: &str, allow: &str) -> Result<()> {
     );
     crate::client::server(server)?;
     install_hook()?;
+    ensure!(
+        allow.is_some() != workspace.is_some(),
+        "choose allow or workspace"
+    );
     let allow: Vec<_> = allow
+        .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().trim_start_matches('@'))
         .collect();
     let value = crate::client::request(
         "POST",
         &format!("{}/v1/repos/{repo}/shadows", server.trim_end_matches('/')),
-        Some(json!({"name":name,"allow":allow})),
+        Some(match workspace {
+            Some(id) => json!({"name":name,"workspace":id}),
+            None => json!({"name":name,"allow":allow}),
+        }),
     )?;
-    let remote = value["remote"].as_str().context("missing shadow remote")?;
-    ensure!(
-        remote.starts_with("git@github.com:")
-            && remote.ends_with(".git")
-            && !remote.contains(['\n', '\r', ' ']),
-        "invalid remote"
-    );
-    let slug = remote
-        .trim_start_matches("git@github.com:")
-        .trim_end_matches(".git");
     let origin = enrolled["origin"].as_str().context("missing origin")?;
-    let canonical = crate::envelope::repo(origin);
-    let org = canonical.split('/').next().context("invalid origin")?;
-    ensure!(
-        slug.starts_with(&format!("{org}/bettergit-")),
-        "shadow remote differs from enrolled organization"
-    );
-    let info = crate::client::github_repo(server, slug)?;
-    ensure!(
-        info["private"] == true && info["fork"] == false,
-        "GitHub must confirm the shadow is private and not a fork"
-    );
+    let remote = companion_remote(server, origin, &value)?;
     let id = value["id"]
         .as_str()
         .map(str::to_owned)
         .unwrap_or_else(|| value["id"].to_string());
     ensure!(id.bytes().all(|c| c.is_ascii_digit()), "invalid shadow ID");
     let remote_name = format!("bettergit-{name}");
-    git(&["remote", "add", &remote_name, remote])?;
+    git(&["remote", "add", &remote_name, &remote])?;
     git(&[
         "config",
         &format!("bettergit.shadow.{name}.remote-url"),
-        remote,
+        &remote,
     ])?;
     git(&["config", &format!("branch.{name}.remote"), &remote_name])?;
     git(&["config", &format!("branch.{name}.pushRemote"), &remote_name])?;
@@ -120,45 +210,20 @@ pub fn create(server: &str, repo: &str, name: &str, allow: &str) -> Result<()> {
     println!("Private branch {name} created. Push with: git push {remote_name} {name}");
     Ok(())
 }
-pub fn join(server: &str, id: &str) -> Result<()> {
-    ensure!(
-        !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()),
-        "invalid shadow ID"
-    );
+pub fn join(server: &str, id: &str, value: &Value) -> Result<()> {
     ensure!(
         git(&["status", "--porcelain"])?.is_empty(),
         "commit or stash changes first"
     );
     let enrolled = enrollment(server, None)?;
-    let value = crate::client::request(
-        "GET",
-        &format!("{}/v1/shadows/{id}", server.trim_end_matches('/')),
-        None,
-    )?;
     ensure!(
         value["repo"] == enrolled["repo"],
         "shadow belongs to another repository"
     );
     let name = value["branch"].as_str().context("missing branch")?;
-    let remote = value["remote"].as_str().context("missing remote")?;
     ensure!(valid(name), "invalid shadow branch");
     let origin = enrolled["origin"].as_str().context("missing origin")?;
-    let canonical = crate::envelope::repo(origin);
-    let org = canonical.split('/').next().context("invalid origin")?;
-    ensure!(
-        remote.starts_with(&format!("git@github.com:{org}/bettergit-"))
-            && remote.ends_with(".git")
-            && !remote.contains([' ', '\n', '\r']),
-        "untrusted shadow remote"
-    );
-    let slug = remote
-        .trim_start_matches("git@github.com:")
-        .trim_end_matches(".git");
-    let info = crate::client::github_repo(server, slug)?;
-    ensure!(
-        info["private"] == true && info["fork"] == false,
-        "GitHub must confirm shadow privacy"
-    );
+    let remote = companion_remote(server, origin, value)?;
     let exists = Command::new("git")
         .args([
             "show-ref",
@@ -181,18 +246,25 @@ pub fn join(server: &str, id: &str) -> Result<()> {
         "invalid approved public baseline"
     );
     install_hook()?;
-    git(&["remote", "add", &remote_name, remote])?;
+    // Fetch before creating the remote so credential failures can be retried.
     git(&[
         "fetch",
         "--no-tags",
         "--",
-        &remote_name,
-        &format!("refs/heads/{name}:refs/remotes/{remote_name}/{name}"),
-    ])?;
-    // Limit the exemption to the enrolled public history shared with the shadow.
+        &remote,
+        &format!("refs/heads/{name}"),
+    ])
+    .context("could not fetch the restricted branch; check your GitHub Git credentials")?;
+    let fetched = git(&["rev-parse", "FETCH_HEAD"])?;
+    let base = git(&["merge-base", "--", baseline, &fetched])?;
+    git(&["remote", "add", &remote_name, &remote])?;
     let tip = format!("refs/remotes/{remote_name}/{name}");
-    let base = git(&["merge-base", "--", baseline, &tip])?;
-    for (key, value) in [("id", id), ("base", base.as_str()), ("remote-url", remote)] {
+    git(&["update-ref", &tip, &fetched])?;
+    for (key, value) in [
+        ("id", id),
+        ("base", base.as_str()),
+        ("remote-url", remote.as_str()),
+    ] {
         git(&["config", &format!("bettergit.shadow.{name}.{key}"), value])?;
     }
     git(&["config", &format!("branch.{name}.remote"), &remote_name])?;
@@ -569,4 +641,84 @@ pub fn guard_push(remote: &str, url: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Manage access metadata without fetching or publishing private Git content.
+pub fn workspace_request(
+    server: &str,
+    method: &str,
+    repo: Option<&str>,
+    id: Option<&str>,
+    body: Option<Value>,
+    action: Option<&str>,
+) -> Result<()> {
+    crate::client::server(server)?;
+    let identifier = repo.or(id).context("workspace or repository ID required")?;
+    ensure!(
+        !identifier.is_empty() && identifier.bytes().all(|c| c.is_ascii_digit()),
+        "invalid ID"
+    );
+    let path = match repo {
+        Some(repo) => format!("/v1/repos/{repo}/workspaces"),
+        None => match action {
+            Some(action) => {
+                ensure!(
+                    matches!(action, "reconcile" | "archive" | "reinstate"),
+                    "unsupported workspace action"
+                );
+                format!("/v1/workspaces/{identifier}/{action}")
+            }
+            None => format!("/v1/workspaces/{identifier}"),
+        },
+    };
+    let value = crate::client::request(
+        method,
+        &format!("{}{path}", server.trim_end_matches('/')),
+        body,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{github_origin, join_target};
+
+    #[test]
+    fn join_links_use_only_the_selected_control_plane() {
+        let server = "https://bettergit.app";
+        assert_eq!(join_target(server, "42").unwrap(), ("42".into(), false));
+        assert_eq!(
+            join_target(server, "https://bettergit.app/join/#42").unwrap(),
+            ("42".into(), true)
+        );
+        for link in [
+            "https://bettergit.app.evil.test/join/#42",
+            "https://bettergit.app@evil.test/join/#42",
+            "https://bettergit.app/join/#42?x=1",
+            "https://bettergit.app/join/#../../42",
+        ] {
+            assert!(join_target(server, link).is_err());
+        }
+    }
+
+    #[test]
+    fn github_transport_uses_an_exact_host_and_repository_path() {
+        assert_eq!(
+            github_origin("https://github.com/Acme/parent.git").unwrap(),
+            ("Acme/parent", true)
+        );
+        assert_eq!(
+            github_origin("git@github.com:Acme/parent.git").unwrap(),
+            ("Acme/parent", false)
+        );
+        for origin in [
+            "https://github.com.evil.test/Acme/parent.git",
+            "https://github.com@evil.test/Acme/parent.git",
+            "https://github.com/Acme/../parent.git",
+            "https://github.com/Acme/parent.git?query",
+        ] {
+            assert!(github_origin(origin).is_err());
+        }
+    }
 }

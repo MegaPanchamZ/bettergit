@@ -309,6 +309,11 @@ function showRepository(repo) {
   const baseline = node('p', undefined, 'muted');
   baseline.append('Approved baseline ', link(repo.enrollment.baseline.slice(0, 12), policyUrl(repo.enrollment.baseline)));
   detail.append(baseline);
+  if (repo.administrator) {
+    const workspaces = node('section', undefined, 'private-workspaces');
+    detail.append(workspaces);
+    void renderWorkspaces(repo, workspaces);
+  }
   detail.append(node('h3', 'Approved access policy'));
   if (repo.enrollment.rules.length === 0) {
     detail.append(node('p', 'This policy has no protected paths.', 'muted'));
@@ -904,3 +909,180 @@ element('sign-in').addEventListener('click', async event => {
 });
 
 void load();
+
+async function renderWorkspaces(repo, container) {
+  const call = (operation, id, audience) => request('dashboard/workspaces', { operation, id: String(id), audience });
+  container.replaceChildren(node('h3', 'Private workspaces'), node('p', 'Loading workspaces…', 'muted'));
+  try {
+    const [workspaces, groups] = await Promise.all([
+      call('list', repo.enrollment.id), call('groups', repo.enrollment.id),
+    ]);
+    if (selected !== repo) return;
+    container.replaceChildren(node('h3', 'Private workspaces'));
+    container.append(node('p', 'All branches in a workspace share its audience. Members receive push access. Organization owners and privileged Apps may also have access.', 'muted'));
+    const message = node('p', '', 'muted');
+    message.setAttribute('role', 'status');
+    const filterLabel = node('label', 'Find a workspace');
+    const filter = node('input');filter.type = 'search';filter.placeholder = 'Search name or status';
+    filterLabel.append(filter);
+    const cards = node('div');
+    filter.oninput = () => { for (const card of cards.children) card.hidden = !card.dataset.search.includes(filter.value.trim().toLowerCase()); };
+    const editor = node('div');
+    async function edit(workspace) {
+      editor.replaceChildren();
+      const form = node('form', undefined, 'workspace-form');
+      const nameLabel = node('label', 'Workspace name');
+      const name = node('input');
+      name.required = true;
+      name.pattern = '[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}';
+      name.value = workspace?.name ?? '';
+      name.disabled = Boolean(workspace);
+      nameLabel.append(name);
+      const usersLabel = node('label', 'Explicit members (GitHub usernames, separated by commas)');
+      const users = node('input');
+      users.value = workspace?.allowed_users.join(', ') ?? '';
+      usersLabel.append(users);
+      const teamChoices = node('fieldset');
+      teamChoices.append(node('legend', 'Access groups'));
+      for (const group of groups) {
+        const label = node('label', undefined, 'workspace-group');
+        const checkbox = node('input');
+        checkbox.type = 'checkbox'; checkbox.value = group.id;
+        checkbox.checked = workspace?.group_ids.includes(String(group.id)) ?? false;
+        label.append(checkbox, document.createTextNode(group.name));teamChoices.append(label);
+      }
+      const save = node('button', workspace ? 'Apply audience' : 'Create workspace', 'primary');
+      save.type = 'submit';
+      form.append(nameLabel, usersLabel, teamChoices, save);
+      form.onsubmit = async event => {
+        event.preventDefault();save.disabled = true;
+        const audience = {
+          allow: users.value.split(',').map(s => s.trim().replace(/^@/, '')).filter(Boolean),
+          groups: [...teamChoices.querySelectorAll('input:checked')].map(input => input.value),
+        };
+        if (!workspace) audience.name = name.value;
+        try {
+          const updated = await call(workspace ? 'members' : 'create', workspace?.id ?? repo.enrollment.id, audience);
+          await renderWorkspaces(repo, container);
+          inventoryMessage = updated.status === 'ready' ? 'Workspace access verified.' : 'Workspace saved. GitHub has yet to verify access changes.';
+          renderStatus();
+        } catch (error) { message.textContent = error.status === 409 ? error.message : 'Could not save the workspace. Check the audience and GitHub App permissions.'; save.disabled = false; }
+      };
+      editor.append(form);name.disabled ? users.focus() : name.focus();
+    }
+    for (const w of workspaces) {
+      const card = node('article', undefined, 'workspace-card');
+      card.dataset.search = (w.name + ' ' + w.status).toLowerCase();
+      card.append(node('strong', w.name), node('span', w.status, 'state'),
+        node('p', w.checked_at ? 'Last verified: ' + new Date(w.checked_at).toLocaleString() : 'Access has not been verified.', 'muted'));
+      if (w.status === 'pending' || w.status === 'blocked') {
+        card.append(node('p', 'Direct GitHub access may continue until GitHub confirms removal. Better Git joins are paused.'));
+      }
+      if (w.issue) card.append(node('p', w.issue));
+      const controls = node('div', undefined, 'actions');
+      const inspect = node('button', 'Access and branches');inspect.type = 'button';
+      const info = node('div');
+      inspect.onclick = async () => {
+        inspect.disabled = true;
+        try {
+          const full = await call('show', w.id);
+          info.replaceChildren();
+          for (const member of Object.values(full.member_sources)) info.append(node('p', '@' + member.login + ' — ' + member.sources.join(', ')));
+          if (full.status !== 'ready') info.append(node('p', 'Listed members reflect the last successful verification.'));
+          if (full.revoked_ids.length) {
+            const exclusions = node('p', 'Offboarding exclusions (previously downloaded keys and clones remain accessible): ');
+            for (const revokedId of full.revoked_ids) {
+              exclusions.append(document.createTextNode(' ' + revokedId + ' '));
+              if (full.status !== 'archived') {
+                const reinstate = node('button', 'Reinstate ' + revokedId);
+                reinstate.type = 'button';
+                reinstate.onclick = async () => {
+                  reinstate.disabled = true;
+                  try {
+                    await call('reinstate', w.id, { githubId: Number(revokedId) });
+                    await renderWorkspaces(repo, container);
+                  } catch (error) {
+                    message.textContent = error.status === 409 ? error.message : 'Could not reinstate excluded member.';
+                    reinstate.disabled = false;
+                  }
+                };
+                exclusions.append(reinstate);
+              }
+            }
+            info.append(exclusions);
+          }
+          info.append(node('p', full.branches.length + ' branches'));
+          const branches = node('ul');
+          if (full.branches.length > 10) {
+            const search = node('label', 'Find a branch');
+            const input = node('input');input.type = 'search';
+            input.oninput = () => {
+              for (const item of branches.children) item.hidden = !item.dataset.name.includes(input.value.trim().toLowerCase());
+            };
+            search.append(input);info.append(search);
+          }
+          for (const branch of full.branches) {
+            const item = node('li', branch.branch_name + ' · ' + branch.status);
+            item.dataset.name = branch.branch_name.toLowerCase();
+            if (full.status === 'ready' && branch.status === 'ready') {
+              const share = node('button', 'Get join link');share.type = 'button';
+              const link = node('input');link.type = 'url';link.readOnly = true;link.hidden = true;
+              link.setAttribute('aria-label', 'Join link for ' + branch.branch_name);
+              const result = node('span');result.setAttribute('role', 'status');
+              share.onclick = async () => {
+                share.disabled = true;
+                try {
+                  const handoff = await call('join-link', branch.id);
+                  link.value = window.location.origin + handoff.path;
+                  link.hidden = false;link.select();
+                  result.textContent = '';
+                } catch (error) {
+                  result.textContent = error.status === 409 ? error.message : 'Verify access and confirm the branch has been pushed.';
+                } finally { share.disabled = false; }
+              };
+              item.append(' ', share, ' ', link, ' ', result);
+            }
+            branches.append(item);
+          }
+          info.append(branches);
+          const history = node('details');history.append(node('summary', 'Access history'));
+          for (const e of full.events) {
+            const time = new Date(e.created_at).toLocaleString();
+            if (e.action === 'MEMBER_ACCESS_REMOVED') {
+              for (const member of e.details.members) history.append(node('p', time + ' · @' + member.login + ' · GitHub verified companion access removed · Parent permission: ' + member.parent));
+            } else history.append(node('p', time + ' · ' + e.action));
+          }
+          info.append(history);
+        } catch { message.textContent = 'Could not load workspace access.'; }
+        finally { inspect.disabled = false; }
+      };
+      controls.append(inspect);
+      if (w.status !== 'archived') {
+        const members = node('button', 'Edit audience');members.type = 'button';members.onclick = () => edit(w);
+        const sync = node('button', 'Verify access');sync.type = 'button';
+        sync.onclick = async () => {
+          sync.disabled = true;
+          try { await call('reconcile', w.id);await renderWorkspaces(repo, container); }
+          catch { message.textContent = 'Access verification failed.';sync.disabled = false; }
+        };
+        const archive = node('button', 'Archive…');archive.type = 'button';
+        archive.onclick = () => {
+          info.replaceChildren(node('p', 'Archiving removes managed collaborator access and keeps the repository history. Privileged administrators retain access.'));
+          const confirm = node('button', 'Archive and remove managed access');confirm.type = 'button';
+          confirm.onclick = async () => {
+            confirm.disabled = true;
+            try { await call('archive', w.id);await renderWorkspaces(repo, container); }
+            catch { message.textContent = 'Archiving could not complete. Inspect workspace status.';confirm.disabled = false; }
+          };
+          info.append(confirm);
+        };
+        controls.append(members, sync, archive);
+      }
+      card.append(controls, info);cards.append(card);
+    }
+    const create = node('button', 'New private workspace', 'primary');create.type = 'button';create.onclick = () => edit();
+    container.append(filterLabel, cards, create, message, editor);
+  } catch {
+    if (selected === repo) container.replaceChildren(node('h3', 'Private workspaces'), node('p', 'Workspace management is unavailable. Check the server migration and GitHub App access.', 'muted'));
+  }
+}
