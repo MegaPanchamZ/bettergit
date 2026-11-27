@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Download the Better Git CLI for macOS, Linux, or Windows.">
+  <title>Install Better Git · Better Git</title>
+  <link rel="canonical" href="https://bettergit.app/install/">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/docs.css">
+  <script src="/copy.js" defer></script>
+</head>
+<body>
+  <main class="page docs">
+    <a href="/">Better Git</a>
+    <h1>Install Better Git</h1>
+    <p>Download the latest pilot build for macOS or Linux (Intel or ARM64), or for 64-bit Windows.</p>
+    <a class="download" href="https://github.com/MegaPanchamZ/bettergit/releases">View CLI releases</a>
+    <p>Each release lists its platform archives, shell and PowerShell installers, and SHA-256 checksums.</p>
+    <h2>Build from source</h2>
+    <p>Install Git and stable Rust. See the <a href="https://github.com/MegaPanchamZ/bettergit#install-and-use">Quickstart</a> for Linux build dependencies and keychain setup.</p>
+    <section class="install" aria-labelledby="install-title">
+      <div class="bar"><span id="install-title">Source install</span><button type="button" id="copy-install" hidden>Copy</button></div>
+      <pre><code id="install-command">git clone https://github.com/MegaPanchamZ/bettergit.git
+cd bettergit
+cargo install --locked --path .
+bettergit --version</code></pre>
+      <p id="copy-status" class="visually-hidden" role="status"></p>
+    </section>
+    <p class="note">Public pilot. Use test secrets. <a href="https://github.com/MegaPanchamZ/bettergit#hosted-better-git">Hosted setup</a> · <a href="/support/">Support</a></p>
+  </main>
+</body>
+</html>

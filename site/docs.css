@@ -1,0 +1,6 @@
+.page.docs { text-align: left; }
+.docs h1 { margin-top: 1.25rem; font-size: 1.65rem; }
+.docs h2 { margin: 1.4rem 0 .45rem; font-size: 1.05rem; }
+.docs p { margin: .55rem 0 .9rem; }
+.docs > a:first-child { color: var(--subtle); font-size: .875rem; }
+.docs .note { margin-top: 1.25rem; }

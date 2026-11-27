@@ -11,7 +11,7 @@ Better Git encrypts selected files before Git stores them. The CLI handles local
 
 ## Install the CLI
 
-Use Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`. The CLI needs a working OS keychain for local identities and GitHub credentials.
+[Download a CLI build](https://bettergit.app/install/), or build from source with Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`. The CLI needs a working OS keychain for local identities and GitHub credentials.
 
 ```sh
 git clone https://github.com/MegaPanchamZ/bettergit.git
@@ -22,7 +22,7 @@ bettergit --version
 
 ## Set up a repository
 
-Better Git is in development preview. Start in a disposable repository with dummy values. Follow the [local setup](https://github.com/MegaPanchamZ/bettergit#policy-and-local-setup) to define the protected paths, add each group's signing key to the policy, stage the encrypted content, and verify the index.
+Better Git is in public pilot. Start in a disposable repository with dummy values. Follow the [local setup](https://github.com/MegaPanchamZ/bettergit#policy-and-local-setup) to define the protected paths, add each group's signing key to the policy, stage the encrypted content, and verify the index.
 
 For hosted setup, an organization owner can [install the Better Git App](https://github.com/apps/better-git-app/installations/new) on selected repositories. Commit the reviewed policy to the default branch. From the repository checkout, an administrator can then sign in and enroll it. Replace `OWNER` and `REPO` with the values from the checkout's GitHub `origin`.
 

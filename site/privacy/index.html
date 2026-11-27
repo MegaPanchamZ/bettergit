@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="What the hosted Better Git service receives and stores.">
+  <title>Hosted privacy · Better Git</title>
+  <link rel="canonical" href="https://bettergit.app/privacy/">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/docs.css">
+</head>
+<body>
+  <main class="page docs">
+    <a href="/">Better Git</a>
+    <h1>Hosted privacy</h1>
+    <h2>GitHub sign-in</h2>
+    <p>The dashboard uses a session cookie. The hosted service keeps the GitHub sign-in token in server memory for up to an hour for that dashboard session. Sign out to end the session. The CLI stores its GitHub credentials and encryption identity in your operating system’s credential store.</p>
+    <h2>Repository and access data</h2>
+    <p>The GitHub App accesses account, repository, team, and permission information to check access. The service stores repository and account identifiers, approved policies, relevant public keys, group keys encrypted for their recipients, and records of security events.</p>
+    <p>The merge guard reads relevant Git content from enrolled repositories to verify compliance with the approved policy. If someone pushes plaintext, it may already be in GitHub history by the time the check runs. Normal key distribution uses encrypted keys. Your local private key decrypts them.</p>
+    <h2>Questions</h2>
+    <p>See the <a href="https://github.com/MegaPanchamZ/bettergit/blob/main/docs/security-model.md">security model</a> for the trust boundaries and <a href="/support/">Support</a> for reporting options. GitHub’s own policies apply to its service.</p>
+  </main>
+</body>
+</html>

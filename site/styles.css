@@ -50,3 +50,15 @@ a:hover { text-decoration-color: currentColor; }
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.download {
+  display: inline-block;
+  padding: .52rem .85rem;
+  border: 1px solid var(--rule);
+  border-radius: .5rem;
+  background: var(--tray);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.download:hover { background: #1a1a1a; }

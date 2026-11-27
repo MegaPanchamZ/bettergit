@@ -5,21 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Better Git encrypts the files you choose before Git stores them. Open source and self-hostable.">
   <title>Better Git — Encrypt files before Git stores them</title>
+  <link rel="canonical" href="https://bettergit.app/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://bettergit.app/">
+  <meta property="og:title" content="Better Git">
+  <meta property="og:description" content="Encrypt files before Git stores them. Open source and self-hostable.">
+  <meta property="og:image" content="https://bettergit.app/og.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Better Git. Encrypt files before Git stores them.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css">
-  <script src="/copy.js" defer></script>
 </head>
 <body>
   <main class="page">
     <h1>Better Git</h1>
     <p class="pitch">Encrypt files before Git stores them.</p>
-    <section class="install" aria-labelledby="install-title">
-      <div class="bar"><span id="install-title">Install from source</span><button type="button" id="copy-install" hidden>Copy</button></div>
-      <pre><code id="install-command">git clone https://github.com/MegaPanchamZ/bettergit.git
-cd bettergit
-cargo install --locked --path .</code></pre>
-      <p id="copy-status" class="visually-hidden" role="status"></p>
-    </section>
+    <a class="download" href="/install/">Download Better Git</a>
     <nav aria-label="Resources">
       <a href="/dashboard/">Dashboard</a>
       <a href="https://github.com/MegaPanchamZ/bettergit#install-and-use">Quickstart</a>
@@ -27,8 +33,10 @@ cargo install --locked --path .</code></pre>
       <a href="/agents.md">agents.md</a>
       <a href="https://github.com/MegaPanchamZ/bettergit/blob/main/deploy/README.md">Self-host</a>
       <a href="https://github.com/MegaPanchamZ/bettergit">GitHub</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/support/">Support</a>
     </nav>
-    <p class="note">Development preview. Use dummy secrets.</p>
+    <p class="note"><a href="https://github.com/MegaPanchamZ/bettergit/blob/main/docs/validation.md#production-release-gates">Public pilot</a>. Use test secrets.</p>
   </main>
 </body>
 </html>

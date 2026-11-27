@@ -4,13 +4,13 @@
 
 Git-native granular encryption for repositories hosted on GitHub. The open-source Rust CLI encrypts protected content before Git stores it. A TypeScript control plane distributes only wrapped group keys. Companion repositories support restricted branch collaboration.
 
-**Development preview. Use synthetic secrets for evaluation.** See the [audit status](docs/audit-status.md) and [validation record](docs/validation.md) for the checks still required before production use.
+**Public pilot. Use synthetic secrets for evaluation.** See the [audit status](docs/audit-status.md) and [validation record](docs/validation.md) for the checks still required before production use.
 
 ## Install and use
 
 Use the CLI by itself for local Git encryption. For GitHub team-based key distribution and merge checks, use [hosted Better Git](#hosted-better-git) or run your own [control plane with Docker Compose](deploy/README.md) and register your own GitHub App.
 
-To install the CLI from source, install Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`, and use a desktop session with a running, unlocked Secret Service keyring such as GNOME Keyring. macOS uses Keychain and Windows uses Credential Manager.
+[Download the CLI](https://bettergit.app/install/) for macOS, Linux, or Windows. To build the CLI from source, install Git and stable Rust. On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libdbus-1-dev`, and use a desktop session with a running, unlocked Secret Service keyring such as GNOME Keyring. macOS uses Keychain and Windows uses Credential Manager.
 
 ```sh
 git clone https://github.com/MegaPanchamZ/bettergit.git
@@ -122,7 +122,7 @@ If the filter refuses an invalid index blob, inspect the committed history and i
 
 ## Hosted Better Git
 
-An organization owner can [install the Better Git App](https://github.com/apps/better-git-app/installations/new) on selected repositories. Start with a disposable organization repository and dummy secrets while Better Git is in development preview.
+An organization owner can [install the Better Git App](https://github.com/apps/better-git-app/installations/new) on selected repositories. Start with a disposable organization repository and dummy secrets during the public pilot.
 
 Install the CLI and follow [policy and local setup](#policy-and-local-setup). Commit the policy with its signing keys to the repository's default branch. A repository administrator can review the commit and enroll it in the [dashboard](https://bettergit.app/dashboard/) or use the CLI from the repository checkout.
 
@@ -185,7 +185,7 @@ Private companions remain visible to organization owners, enterprise administrat
 
 ## Releases
 
-`dist-workspace.toml` and the release workflow use cargo-dist 0.34.0. The release plan includes Linux, macOS, and Windows binaries plus Shell, PowerShell, npm, and Homebrew installer artifacts. The tag workflow requires the checks to pass and attests the release assets before publication. Configure required reviewers and tag restrictions on the GitHub `release` environment before publishing. No release has been published. Homebrew tap publication and npm registry publication need maintainer-owned destinations and credentials. The checks workflow runs Rust checks on all three OS families and TypeScript checks with disposable Postgres on Linux.
+`dist-workspace.toml` and the release workflow use cargo-dist 0.34.0. The release plan includes Linux, macOS, and Windows binaries plus Shell, PowerShell, npm, and Homebrew installer artifacts. The tag workflow requires the checks to pass and attests the release assets before publication. Configure required reviewers and tag restrictions on the GitHub `release` environment before publishing. Published builds are listed on [GitHub Releases](https://github.com/MegaPanchamZ/bettergit/releases). Homebrew tap publication and npm registry publication need maintainer-owned destinations and credentials. The checks workflow runs Rust checks on all three OS families and TypeScript checks with disposable Postgres on Linux.
 
 ## License
 
